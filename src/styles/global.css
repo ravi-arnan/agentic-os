@@ -1,0 +1,120 @@
+@import 'tailwindcss';
+
+@theme {
+  /* sRGB hex on purpose: identical rendering on wide-gamut displays */
+  --color-bg: #f4f2f9;
+  --color-panel: rgba(255, 255, 255, 0.4);
+  --color-raised: rgba(255, 255, 255, 0.5);
+  --color-edge: rgba(72, 66, 110, 0.25);
+  --color-ink: #2a2838;
+  --color-dim: #4a4661;
+  --color-faint: #6e6a88;
+  --color-accent: #5b54c4;
+  --color-accent-dim: rgba(91, 84, 196, 0.1);
+  --color-success: #2f9464;
+  --color-warn: #c08434;
+  --color-danger: #c24d45;
+  --color-violet: #8a7ed2;
+  --color-cyan: #58a3bb;
+
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  background:
+    radial-gradient(1100px 750px at 15% -5%, rgba(148, 137, 224, 0.85), transparent 60%),
+    radial-gradient(950px 700px at 92% 5%, rgba(214, 164, 205, 0.65), transparent 55%),
+    radial-gradient(1000px 750px at 88% 102%, rgba(240, 200, 160, 0.75), transparent 60%),
+    radial-gradient(900px 700px at 4% 102%, rgba(150, 175, 226, 0.6), transparent 55%),
+    linear-gradient(150deg, #b7abdf, #cdb9da 58%, #e9d2b8);
+  background-attachment: fixed;
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+}
+
+/* frosted glass surface: transparent enough for the backdrop to tint it */
+.panel {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0.26));
+  backdrop-filter: blur(24px) saturate(1.2);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 18px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 14px 40px rgba(64, 56, 110, 0.18),
+    0 3px 10px rgba(64, 56, 110, 0.08);
+}
+
+.panel-title {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-dim);
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* soft sheen for the console (replaces the old scanline) */
+.scanline {
+  position: relative;
+  overflow: hidden;
+}
+.scanline::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 45%;
+  pointer-events: none;
+  background: linear-gradient(180deg, oklch(100% 0 0 / 28%), transparent);
+}
+
+/* primary action: soft indigo->violet gradient, calm but alive */
+.cta {
+  background: linear-gradient(160deg, #6f66d8, #5847b4);
+  color: white;
+}
+.cta:hover {
+  filter: brightness(1.08) saturate(1.1);
+}
+
+/* hero numbers: violet -> pink sheen */
+.gradient-num {
+  background: linear-gradient(100deg, #5d52c8, #a860a8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.live-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+@keyframes feed-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.feed-item {
+  animation: feed-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: oklch(60% 0.04 290 / 45%); border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot, .feed-item { animation: none; }
+}

@@ -1,0 +1,22 @@
+[Unit]
+Description=Agentic OS dashboard (wraps Claude Code)
+Documentation=https://github.com/ravi-arnan/agentic-os
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ravi/Projects/agentic-os
+Environment=NODE_ENV=production
+# claude lives in ~/.local/bin, node in /usr/local/bin — the skill runner
+# spawns `claude`, so both must be on PATH for the service.
+Environment=PATH=/home/ravi/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/local/bin/node server/index.mjs
+Restart=on-failure
+RestartSec=5
+# scheduled skills fire in-process; give a long stop grace so a running
+# claude invocation isn't killed mid-write to the vault.
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,28 @@
+{
+  "name": "agentic-os",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Visual agentic OS: clickable dashboard wrapping Claude Code, one-click skills, metrics, Obsidian wiring",
+  "scripts": {
+    "dev": "concurrently -k -n srv,web -c green,cyan \"node --watch-path=server server/index.mjs\" \"vite\"",
+    "build": "vite build",
+    "start": "NODE_ENV=production node server/index.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "lucide-react": "^0.525.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.11",
+    "@vitejs/plugin-react": "^4.6.0",
+    "concurrently": "^9.2.0",
+    "tailwindcss": "^4.1.11",
+    "vite": "^7.0.0",
+    "vitest": "^3.2.4"
+  }
+}
