@@ -79,7 +79,7 @@ export default function CostChart({ usage }) {
             <text
               x={PAD.left - 6} y={yFor(maxCost * f) + 3}
               textAnchor="end" fontSize="9"
-              className="num fill-current text-faint"
+              className="num fill-current text-dim"
             >
               {fmtMoney(maxCost * f)}
             </text>

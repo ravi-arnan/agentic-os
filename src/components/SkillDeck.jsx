@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Sunrise, Radar, NotebookPen, Inbox, CalendarCheck, Play, LoaderCircle, CircleCheck, CircleX, Send, AlarmClock } from 'lucide-react';
+import { Sunrise, Radar, NotebookPen, Inbox, CalendarCheck, Play, LoaderCircle, CircleCheck, CircleX, CircleDashed, Send, AlarmClock } from 'lucide-react';
 import { apiPost } from '../api.js';
 import { fmtAgo, fmtMoney, fmtDuration } from '../lib/format.js';
 
@@ -21,7 +21,12 @@ function ScheduleChip({ schedule }) {
 }
 
 function LastRun({ run }) {
-  if (!run) return <span className="text-faint text-[0.68rem] font-mono">never run</span>;
+  if (!run)
+    return (
+      <span className="flex items-center gap-1.5 text-faint/70 text-[0.68rem] font-mono">
+        <CircleDashed size={12} /> never run
+      </span>
+    );
   const Icon = run.ok ? CircleCheck : CircleX;
   return (
     <span className="flex items-center gap-1.5 text-[0.68rem] font-mono text-dim">
@@ -48,7 +53,7 @@ function SkillCard({ skill, lastRun, isRunning, onStart }) {
   }
 
   return (
-    <div className="panel flex flex-col gap-3 p-4 transition-colors hover:border-accent/40">
+    <div className="panel lift flex flex-col gap-3 p-4 hover:border-accent/40">
       {/* header: icon sits WITH the title */}
       <div className="flex items-center gap-2.5">
         <div className="shrink-0 rounded-lg bg-accent-dim p-2 text-accent">

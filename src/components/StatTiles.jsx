@@ -3,8 +3,8 @@ import { fmtMoney, fmtTokens } from '../lib/format.js';
 
 function Tile({ icon: Icon, label, value, sub }) {
   return (
-    <div className="panel flex items-center gap-3 p-3.5">
-      <div className="rounded-md bg-raised p-2 text-dim">
+    <div className="panel tile-sheen flex items-center gap-3 p-3.5">
+      <div className="rounded-md bg-accent-dim p-2 text-accent">
         <Icon size={16} strokeWidth={1.8} />
       </div>
       <div className="min-w-0">

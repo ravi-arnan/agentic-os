@@ -36,8 +36,8 @@ export default function Heatmap({ activity }) {
                 style={{
                   background:
                     count === 0
-                      ? 'rgba(255, 255, 255, 0.45)'
-                      : `rgba(91, 84, 196, ${(0.12 + 0.78 * (count / max)).toFixed(3)})`,
+                      ? 'rgba(255, 255, 255, 0.09)'
+                      : `rgba(160, 146, 245, ${(0.16 + 0.74 * (count / max)).toFixed(3)})`,
                 }}
               />
             ))}

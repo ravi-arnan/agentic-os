@@ -2,53 +2,89 @@
 
 @theme {
   /* sRGB hex on purpose: identical rendering on wide-gamut displays */
-  --color-bg: #f4f2f9;
-  --color-panel: rgba(255, 255, 255, 0.4);
-  --color-raised: rgba(255, 255, 255, 0.5);
-  --color-edge: rgba(72, 66, 110, 0.25);
-  --color-ink: #2a2838;
-  --color-dim: #4a4661;
-  --color-faint: #6e6a88;
-  --color-accent: #5b54c4;
-  --color-accent-dim: rgba(91, 84, 196, 0.1);
-  --color-success: #2f9464;
-  --color-warn: #c08434;
-  --color-danger: #c24d45;
-  --color-violet: #8a7ed2;
-  --color-cyan: #58a3bb;
+  --color-bg: #16132a;
+  --color-panel: rgba(255, 255, 255, 0.06);
+  --color-raised: rgba(255, 255, 255, 0.08);
+  --color-edge: rgba(255, 255, 255, 0.14);
+  --color-ink: #f6f4fe;
+  --color-dim: #cfc8ec;
+  --color-faint: #a49dc8;
+  --color-accent: #a99cf5;
+  --color-accent-dim: rgba(169, 156, 245, 0.16);
+  --color-success: #4fc98d;
+  --color-warn: #e0a94e;
+  --color-danger: #e8756c;
+  --color-violet: #b3a6f0;
+  --color-cyan: #6cc0d8;
 
   --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
 html {
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 body {
-  background:
-    radial-gradient(1100px 750px at 15% -5%, rgba(148, 137, 224, 0.85), transparent 60%),
-    radial-gradient(950px 700px at 92% 5%, rgba(214, 164, 205, 0.65), transparent 55%),
-    radial-gradient(1000px 750px at 88% 102%, rgba(240, 200, 160, 0.75), transparent 60%),
-    radial-gradient(900px 700px at 4% 102%, rgba(150, 175, 226, 0.6), transparent 55%),
-    linear-gradient(150deg, #b7abdf, #cdb9da 58%, #e9d2b8);
+  background: linear-gradient(150deg, #1c1836, #211b3d 58%, #2a2140);
   background-attachment: fixed;
   color: var(--color-ink);
   font-family: var(--font-sans);
   min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
 }
 
-/* frosted glass surface: transparent enough for the backdrop to tint it */
+/* two drifting glow layers behind the glass — animate transform only (GPU-cheap) */
+body::before,
+body::after {
+  content: '';
+  position: fixed;
+  inset: -25%;
+  z-index: -1;
+  pointer-events: none;
+  will-change: transform;
+}
+body::before {
+  background:
+    radial-gradient(880px 620px at 18% 14%, rgba(126, 108, 224, 0.6), transparent 60%),
+    radial-gradient(760px 560px at 86% 8%, rgba(196, 108, 178, 0.44), transparent 58%);
+  animation: drift-a 34s ease-in-out infinite alternate;
+}
+body::after {
+  background:
+    radial-gradient(840px 600px at 84% 88%, rgba(210, 140, 96, 0.36), transparent 60%),
+    radial-gradient(720px 560px at 10% 92%, rgba(96, 118, 210, 0.44), transparent 58%);
+  animation: drift-b 44s ease-in-out infinite alternate;
+}
+
+@keyframes drift-a {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  100% { transform: translate3d(4%, 3%, 0) scale(1.09); }
+}
+@keyframes drift-b {
+  0%   { transform: translate3d(0, 0, 0) scale(1.06); }
+  100% { transform: translate3d(-3.5%, -4%, 0) scale(1); }
+}
+
+/* frosted glass surface: dark translucent so the backdrop glow tints it */
 .panel {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.52), rgba(255, 255, 255, 0.26));
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.035));
   backdrop-filter: blur(24px) saturate(1.2);
   -webkit-backdrop-filter: blur(24px) saturate(1.2);
-  border: 1px solid rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 18px;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.6),
-    0 14px 40px rgba(64, 56, 110, 0.18),
-    0 3px 10px rgba(64, 56, 110, 0.08);
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 14px 40px rgba(0, 0, 0, 0.32),
+    0 3px 10px rgba(0, 0, 0, 0.18);
+}
+
+/* self-contained sheen: keeps small tiles alive where the backdrop glow doesn't reach */
+.tile-sheen {
+  background:
+    radial-gradient(130% 130% at 0% 0%, rgba(169, 156, 245, 0.14), transparent 58%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.045));
 }
 
 .panel-title {
@@ -75,21 +111,40 @@ body {
   inset: 0 0 auto 0;
   height: 45%;
   pointer-events: none;
-  background: linear-gradient(180deg, oklch(100% 0 0 / 28%), transparent);
+  background: linear-gradient(180deg, oklch(100% 0 0 / 10%), transparent);
 }
 
-/* primary action: soft indigo->violet gradient, calm but alive */
+/* primary action: calm translucent accent that fills solid on hover, so data leads */
 .cta {
-  background: linear-gradient(160deg, #6f66d8, #5847b4);
-  color: white;
+  background: linear-gradient(160deg, rgba(139, 124, 235, 0.22), rgba(110, 96, 210, 0.14));
+  border: 1px solid rgba(150, 136, 240, 0.42);
+  color: #ddd6fb;
+  transition: background 200ms ease, border-color 200ms ease, color 200ms ease;
 }
 .cta:hover {
-  filter: brightness(1.08) saturate(1.1);
+  background: linear-gradient(160deg, #7166dc, #5847b4);
+  border-color: transparent;
+  color: #fff;
+}
+
+/* interactive lift for action cards */
+.lift {
+  transition:
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 220ms ease,
+    border-color 220ms ease;
+}
+.lift:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 22px 54px rgba(0, 0, 0, 0.4),
+    0 5px 16px rgba(0, 0, 0, 0.24);
 }
 
 /* hero numbers: violet -> pink sheen */
 .gradient-num {
-  background: linear-gradient(100deg, #5d52c8, #a860a8);
+  background: linear-gradient(100deg, #b6a8ff, #f0a0d8);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -116,5 +171,5 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 
 @media (prefers-reduced-motion: reduce) {
-  .live-dot, .feed-item { animation: none; }
+  .live-dot, .feed-item, body::before, body::after { animation: none; }
 }
