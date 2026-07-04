@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { extractWikilinks, findOrphans, computeStreak } from '../lib/vault.mjs';
+import { extractWikilinks, findOrphans, computeStreak, buildGraph } from '../lib/vault.mjs';
 
 describe('extractWikilinks', () => {
   test('extracts plain, aliased, and heading links', () => {
@@ -34,6 +34,23 @@ describe('findOrphans', () => {
       note('01-Projects/habitgrid.md'),
     ];
     expect(findOrphans(notes)).toEqual([]);
+  });
+});
+
+describe('buildGraph', () => {
+  test('links resolve by basename, dedupe, and count degree', () => {
+    const notes = [
+      { relPath: 'Projects/INDEX.md', content: 'see [[Hackathon Stellar]] and [[myKalender]]' },
+      { relPath: 'Projects/Hackathon Stellar.md', content: 'back to [[INDEX]]' }, // reverse dup
+      { relPath: 'Projects/myKalender.md', content: 'nothing here' },
+      { relPath: 'Projects/Ghost.md', content: '[[Does Not Exist]]' }, // dangling target dropped
+    ];
+    const { nodes, edges } = buildGraph(notes);
+
+    expect(nodes).toHaveLength(4);
+    expect(edges).toHaveLength(2); // INDEX-Stellar counted once, INDEX-myKalender
+    expect(nodes.find((n) => n.id === 'INDEX').deg).toBe(2);
+    expect(nodes.find((n) => n.id === 'Ghost').deg).toBe(0);
   });
 });
 

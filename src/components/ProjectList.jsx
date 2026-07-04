@@ -20,7 +20,7 @@ export default function ProjectList({ projects }) {
   const visible = query ? filtered : showAll ? filtered : filtered.slice(0, SHOW_DEFAULT);
 
   return (
-    <div className="panel flex h-full flex-col p-4">
+    <div className="panel flex flex-col p-4">
       <div className="flex items-center gap-3">
         <h2 className="panel-title">projects · ~/Projects</h2>
         <div className="flex-1" />
@@ -36,8 +36,7 @@ export default function ProjectList({ projects }) {
         </label>
       </div>
 
-      {/* bounded: expanding never stretches the page */}
-      <div className="mt-1 max-h-[420px] flex-1 overflow-y-auto pr-1">
+      <div className="mt-1">
         <ul className="divide-y divide-edge/40">
           {visible.map((p) => (
             <li key={p.path} className="flex items-center gap-3 py-1.5">
@@ -88,7 +87,7 @@ export default function ProjectList({ projects }) {
           onClick={() => setShowAll((v) => !v)}
           className="mt-2 w-full shrink-0 rounded-md border border-edge/60 bg-raised py-1.5 font-mono text-[0.68rem] text-dim transition hover:border-accent/40 hover:text-ink"
         >
-          {showAll ? 'show less' : `show all ${filtered.length} (scrolls)`}
+          {showAll ? 'show less' : `show all ${filtered.length}`}
         </button>
       )}
     </div>

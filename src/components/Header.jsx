@@ -1,38 +1,43 @@
-import { Hexagon, Terminal } from 'lucide-react';
 import { fmtMoney, shortPath } from '../lib/format.js';
+import { NAV } from './Sidebar.jsx';
 
-export default function Header({ overview }) {
+const SUBTITLES = {
+  overview: 'Live metrics, cost, and activity at a glance',
+  skills: 'One-click Claude Code skills — launch and watch them run',
+  runs: 'Every headless run, newest first',
+  vault: 'Second brain snapshot from your Obsidian vault',
+  projects: 'Projects Claude Code is tracking',
+};
+
+export default function Header({ view, overview }) {
   const live = overview?.liveSessions || [];
   const today = overview?.today;
+  const nav = NAV.find((n) => n.id === view);
+  const Icon = nav?.icon;
 
   return (
-    <header className="flex items-center gap-6 pb-2">
-      <div className="flex items-center gap-3">
-        <div className="relative">
-          <Hexagon size={30} className="text-accent" strokeWidth={1.4} />
-          <Terminal size={13} className="text-accent absolute inset-0 m-auto" />
-        </div>
-        <div>
-          <h1 className="font-mono text-lg font-semibold tracking-[0.22em] leading-none">
-            AGENTIC<span className="text-accent">OS</span>
-          </h1>
-          <p className="text-faint text-[0.68rem] font-mono tracking-wider mt-1">
-            claude code · mission control
-          </p>
+    <header className="border-edge sticky top-0 z-10 flex items-center gap-4 border-b bg-bg/80 px-6 py-4 backdrop-blur">
+      <div className="flex min-w-0 items-center gap-3">
+        {Icon && (
+          <div className="rounded-lg bg-accent-dim p-2 text-accent">
+            <Icon size={19} strokeWidth={1.8} />
+          </div>
+        )}
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold leading-tight">{nav?.label || 'Dashboard'}</h2>
+          <p className="text-faint truncate text-xs">{SUBTITLES[view]}</p>
         </div>
       </div>
 
       <div className="flex-1" />
 
-      <div className="flex items-center gap-2">
-        {live.length === 0 && (
-          <span className="text-faint text-xs font-mono">no live sessions</span>
-        )}
-        {live.slice(0, 5).map((s) => (
+      <div className="hidden items-center gap-2 md:flex">
+        {live.length === 0 && <span className="text-faint font-mono text-xs">no live sessions</span>}
+        {live.slice(0, 4).map((s) => (
           <span
             key={s.pid}
             title={`${s.name || s.sessionId} · ${shortPath(s.cwd)} · ${s.status}`}
-            className="flex items-center gap-1.5 rounded-full border border-edge bg-panel px-2.5 py-1 text-[0.68rem] font-mono text-dim"
+            className="border-edge bg-panel text-dim flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[0.68rem]"
           >
             <span
               className={`live-dot inline-block h-1.5 w-1.5 rounded-full ${
@@ -44,12 +49,10 @@ export default function Header({ overview }) {
         ))}
       </div>
 
-      <div className="text-right">
-        <div className="num gradient-num text-xl leading-none">
-          {today ? fmtMoney(today.cost) : '·'}
-        </div>
-        <div className="text-faint text-[0.65rem] font-mono tracking-wider mt-1 uppercase">
-          est. value today
+      <div className="border-edge border-l pl-4 text-right">
+        <div className="num gradient-num text-xl leading-none">{today ? fmtMoney(today.cost) : '·'}</div>
+        <div className="text-faint mt-1 font-mono text-[0.62rem] uppercase tracking-wider">
+          value today
         </div>
       </div>
     </header>

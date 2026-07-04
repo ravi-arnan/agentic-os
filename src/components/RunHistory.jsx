@@ -19,7 +19,7 @@ export default function RunHistory({ runs, skills, onSelect }) {
         </p>
       )}
 
-      <ul className="mt-1 max-h-[420px] divide-y divide-edge/40 overflow-y-auto pr-1">
+      <ul className="mt-1 divide-y divide-edge/40">
         {list.slice(0, 30).map((run) => (
           <li key={run.id}>
             <button

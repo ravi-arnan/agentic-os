@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useApi } from './api.js';
+import Sidebar from './components/Sidebar.jsx';
 import Header from './components/Header.jsx';
 import SkillDeck from './components/SkillDeck.jsx';
 import RunConsole from './components/RunConsole.jsx';
@@ -7,6 +8,8 @@ import CostChart from './components/CostChart.jsx';
 import StatTiles from './components/StatTiles.jsx';
 import Heatmap from './components/Heatmap.jsx';
 import VaultCard from './components/VaultCard.jsx';
+import VaultGraph from './components/VaultGraph.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import ProjectList from './components/ProjectList.jsx';
 import RunHistory from './components/RunHistory.jsx';
 
@@ -21,6 +24,7 @@ export default function App() {
 
   // { runId, skill, fallback? } — what the console is showing
   const [active, setActive] = useState(null);
+  const [view, setView] = useState('overview');
 
   const skills = skillsApi.data?.skills;
 
@@ -46,56 +50,77 @@ export default function App() {
   const onSelectRun = useCallback((run) => {
     const skill = (skillsApi.data?.skills || []).find((s) => s.id === run.skillId);
     setActive({ runId: run.id, skill, live: run.status === 'running', fallback: run });
+    setView('runs');
   }, [skillsApi.data]);
 
+  const runConsole = active && (
+    <RunConsole
+      key={active.runId}
+      runId={active.runId}
+      skill={active.skill}
+      fallback={active.fallback}
+      onClose={() => setActive(null)}
+      onFinished={onFinished}
+    />
+  );
+
   return (
-    <div className="mx-auto max-w-[1360px] space-y-4 px-5 py-5">
-      <Header overview={overview.data} />
+    <div className="flex min-h-screen">
+      <Sidebar view={view} onNav={setView} running={runningSkillIds.size} />
 
-      <SkillDeck
-        skills={skills}
-        lastRuns={skillsApi.data?.lastRuns}
-        runningSkillIds={runningSkillIds}
-        onStart={onStart}
-      />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Header view={view} overview={overview.data} />
 
-      {active && (
-        <RunConsole
-          key={active.runId}
-          runId={active.runId}
-          skill={active.skill}
-          fallback={active.fallback}
-          onClose={() => setActive(null)}
-          onFinished={onFinished}
-        />
-      )}
+        <main className="mx-auto w-full max-w-[1400px] flex-1 space-y-4 p-6">
+          {view === 'overview' && (
+            <div className="grid grid-cols-12 gap-3">
+              <div className="col-span-12 lg:col-span-8">
+                <CostChart usage={usage.data} />
+              </div>
+              <div className="col-span-12 lg:col-span-4">
+                <StatTiles overview={overview.data} usage={usage.data} />
+              </div>
+              <div className="col-span-12">
+                <Heatmap activity={activity.data} />
+              </div>
+            </div>
+          )}
 
-      <div className="grid grid-cols-12 gap-3">
-        <div className="col-span-12 lg:col-span-8">
-          <CostChart usage={usage.data} />
-        </div>
-        <div className="col-span-12 lg:col-span-4">
-          <StatTiles overview={overview.data} usage={usage.data} />
-        </div>
+          {view === 'skills' && (
+            <>
+              <SkillDeck
+                skills={skills}
+                lastRuns={skillsApi.data?.lastRuns}
+                runningSkillIds={runningSkillIds}
+                onStart={onStart}
+              />
+              {runConsole}
+            </>
+          )}
 
-        <div className="col-span-12 lg:col-span-7">
-          <Heatmap activity={activity.data} />
-        </div>
-        <div className="col-span-12 lg:col-span-5">
-          <VaultCard vault={vault.data} />
-        </div>
+          {view === 'runs' && (
+            <>
+              {runConsole}
+              <RunHistory runs={runs.data} skills={skills} onSelect={onSelectRun} />
+            </>
+          )}
 
-        <div className="col-span-12 lg:col-span-7">
-          <RunHistory runs={runs.data} skills={skills} onSelect={onSelectRun} />
-        </div>
-        <div className="col-span-12 lg:col-span-5">
-          <ProjectList projects={projects.data} />
-        </div>
+          {view === 'vault' && (
+            <>
+              <VaultCard vault={vault.data} />
+              <ErrorBoundary>
+                <VaultGraph graph={vault.data?.graph} />
+              </ErrorBoundary>
+            </>
+          )}
+
+          {view === 'projects' && <ProjectList projects={projects.data} />}
+        </main>
+
+        <footer className="text-faint pb-1 text-center font-mono text-[0.62rem] tracking-wider">
+          agentic-os · wraps claude code headless · costs are API-equivalent estimates
+        </footer>
       </div>
-
-      <footer className="pb-2 text-center font-mono text-[0.62rem] tracking-wider text-faint">
-        agentic-os · wraps claude code headless · vault: secondbrain · costs are API-equivalent estimates
-      </footer>
     </div>
   );
 }
