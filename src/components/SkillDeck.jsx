@@ -12,7 +12,7 @@ function ScheduleChip({ schedule }) {
   const when = schedule.weekday != null ? `${WEEKDAYS[schedule.weekday]} ${hhmm}` : hhmm;
   return (
     <span
-      className="flex items-center gap-1 font-mono text-[0.62rem] text-faint"
+      className="mt-0.5 flex items-center gap-1 font-mono text-[0.62rem] text-faint"
       title={`auto-runs at ${when} while the server is up`}
     >
       <AlarmClock size={10} /> {when}
@@ -48,26 +48,29 @@ function SkillCard({ skill, lastRun, isRunning, onStart }) {
   }
 
   return (
-    <div className="panel group flex flex-col gap-3 p-4 transition-colors hover:border-accent/40">
-      <div className="flex items-start justify-between gap-2">
-        <div className="rounded-md bg-accent-dim p-2 text-accent">
-          <Icon size={18} strokeWidth={1.8} />
+    <div className="panel flex flex-col gap-3 p-4 transition-colors hover:border-accent/40">
+      {/* header: icon sits WITH the title */}
+      <div className="flex items-center gap-2.5">
+        <div className="shrink-0 rounded-lg bg-accent-dim p-2 text-accent">
+          <Icon size={17} strokeWidth={1.8} />
         </div>
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold leading-tight">{skill.name}</h3>
+          <ScheduleChip schedule={skill.schedule} />
+        </div>
+      </div>
+
+      <p className="text-dim flex-1 text-xs leading-relaxed">{skill.tagline}</p>
+
+      {/* runtime status sits next to the action, where you look after running */}
+      <div className="flex min-h-[1.1rem] items-center">
         {isRunning ? (
-          <span className="flex items-center gap-1.5 text-[0.68rem] font-mono text-accent">
-            <LoaderCircle size={12} className="animate-spin" /> running
+          <span className="flex items-center gap-1.5 text-[0.66rem] font-mono text-accent">
+            <LoaderCircle size={11} className="animate-spin" /> running
           </span>
         ) : (
           <LastRun run={lastRun} />
         )}
-      </div>
-
-      <div className="flex-1">
-        <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold">{skill.name}</h3>
-          <ScheduleChip schedule={skill.schedule} />
-        </div>
-        <p className="text-dim mt-1 text-xs leading-relaxed">{skill.tagline}</p>
       </div>
 
       {skill.needsInput ? (
@@ -88,7 +91,7 @@ function SkillCard({ skill, lastRun, isRunning, onStart }) {
           <button
             onClick={launch}
             disabled={isRunning || !input.trim()}
-            className="cta rounded-lg p-2 shadow-md shadow-accent/30 transition disabled:opacity-30"
+            className="cta rounded-lg p-2.5 shadow-md shadow-accent/30 transition disabled:opacity-30"
             aria-label={`Run ${skill.name}`}
           >
             <Send size={14} />
@@ -98,7 +101,7 @@ function SkillCard({ skill, lastRun, isRunning, onStart }) {
         <button
           onClick={launch}
           disabled={isRunning}
-          className="cta flex items-center justify-center gap-2 rounded-lg py-2 text-xs font-mono font-medium tracking-wide shadow-md shadow-accent/30 transition active:scale-[0.99] disabled:opacity-30"
+          className="cta flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-mono font-medium tracking-wide shadow-md shadow-accent/30 transition active:scale-[0.99] disabled:opacity-30"
         >
           {isRunning ? <LoaderCircle size={13} className="animate-spin" /> : <Play size={13} />}
           {isRunning ? 'RUNNING' : 'RUN'}
@@ -111,7 +114,7 @@ function SkillCard({ skill, lastRun, isRunning, onStart }) {
 
 export default function SkillDeck({ skills, lastRuns, runningSkillIds, onStart }) {
   return (
-    <section aria-label="Skills" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <section aria-label="Skills" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
       {(skills || []).map((skill) => (
         <SkillCard
           key={skill.id}
