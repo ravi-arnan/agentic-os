@@ -50,6 +50,22 @@ export function modelColor(model) {
   return 'var(--color-faint)';
 }
 
+/** Monday (YYYY-MM-DD) of the ISO-ish week containing a local date string. */
+export function weekStart(dateStr) {
+  const [y, m, d] = String(dateStr).split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const dow = (dt.getUTCDay() + 6) % 7; // Mon = 0
+  dt.setUTCDate(dt.getUTCDate() - dow);
+  return dt.toISOString().slice(0, 10);
+}
+
+/** Days remaining until the current week (Mon-start) rolls over. */
+export function daysUntilWeekReset(now = Date.now()) {
+  const d = new Date(now);
+  const dow = (d.getDay() + 6) % 7; // Mon = 0
+  return 7 - dow; // Mon -> 7, Sun -> 1
+}
+
 export function shortModel(model) {
   const m = String(model || '');
   const match = m.match(/(fable|opus|sonnet|haiku)[-\s]?([\d.-]*)/i);

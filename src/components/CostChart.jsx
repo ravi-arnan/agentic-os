@@ -8,6 +8,7 @@ const PAD = { top: 10, right: 8, bottom: 22, left: 44 };
 /** Stacked daily bars of estimated cost by model, custom SVG. */
 export default function CostChart({ usage }) {
   const [hover, setHover] = useState(null);
+  const [sel, setSel] = useState(null); // pinned day index (click)
   const daily = usage?.daily || [];
 
   const { bars, maxCost, models } = useMemo(() => {
@@ -40,6 +41,8 @@ export default function CostChart({ usage }) {
   const yFor = (v) => PAD.top + innerH * (1 - v / maxCost);
 
   const hovered = hover != null ? bars[hover] : null;
+  const pinned = sel != null ? bars[sel] : null;
+  const active = hover ?? sel;
 
   return (
     <div className="panel p-4">
@@ -54,12 +57,25 @@ export default function CostChart({ usage }) {
         ))}
       </div>
 
-      <div className="num mt-1 h-5 text-xs text-dim">
-        {hovered
-          ? `${hovered.date} · ${fmtMoney(hovered.cost)} · ${fmtTokens(hovered.out)} out · ${hovered.messages} msgs · ${hovered.sessions} sessions`
-          : usage
-            ? `${fmtMoney(usage.totals.cost)} lifetime est. · ${fmtTokens(usage.totals.out)} tokens out · ${usage.totals.sessions} sessions`
-            : 'loading...'}
+      <div className="num mt-1 flex h-5 items-center gap-2 text-xs text-dim">
+        {(() => {
+          const d = hovered || pinned;
+          if (d)
+            return (
+              <span>
+                {d.date} · {fmtMoney(d.cost)} · {fmtTokens(d.out)} out · {d.messages} msgs · {d.sessions} sessions
+              </span>
+            );
+          if (usage)
+            return (
+              <span>
+                {fmtMoney(usage.totals.cost)} lifetime est. · {fmtTokens(usage.totals.out)} tokens out ·{' '}
+                {usage.totals.sessions} sessions
+              </span>
+            );
+          return <span>loading...</span>;
+        })()}
+        {pinned && !hovered && <span className="text-faint">· click bar again to unpin</span>}
       </div>
 
       <svg
@@ -88,9 +104,27 @@ export default function CostChart({ usage }) {
 
         {bars.map((bar, i) => {
           const x = PAD.left + i * step + (step - barW) / 2;
+          const isActive = active == null || active === i;
           return (
-            <g key={bar.date} onMouseEnter={() => setHover(i)}>
+            <g
+              key={bar.date}
+              className="cursor-pointer"
+              onMouseEnter={() => setHover(i)}
+              onClick={() => setSel((s) => (s === i ? null : i))}
+            >
               <rect x={PAD.left + i * step} y={PAD.top} width={step} height={innerH} fill="transparent" />
+              {sel === i && (
+                <rect
+                  x={PAD.left + i * step + 1}
+                  y={PAD.top}
+                  width={step - 2}
+                  height={innerH}
+                  rx="2"
+                  fill="currentColor"
+                  className="text-edge"
+                  opacity="0.5"
+                />
+              )}
               {bar.segs.map((seg) => (
                 <rect
                   key={seg.model}
@@ -100,7 +134,7 @@ export default function CostChart({ usage }) {
                   height={Math.max(0.5, (seg.cost / maxCost) * innerH)}
                   rx="1.5"
                   fill={modelColor(seg.model)}
-                  opacity={hover == null || hover === i ? 0.95 : 0.35}
+                  opacity={isActive ? 0.95 : 0.35}
                 />
               ))}
               {(i === 0 || i === bars.length - 1 || bar.date.endsWith('-01') || i % 7 === 0) && (
@@ -116,6 +150,80 @@ export default function CostChart({ usage }) {
           );
         })}
       </svg>
+
+      {pinned && <DayDetail day={pinned} onClose={() => setSel(null)} />}
+    </div>
+  );
+}
+
+const TOKEN_ROWS = [
+  ['output', 'out'],
+  ['input', 'in'],
+  ['cache read', 'cacheRead'],
+  ['cache write', 'cacheCreate'],
+];
+
+/** Pinned breakdown for a single clicked day. */
+function DayDetail({ day, onClose }) {
+  const models = Object.entries(day.byModel).sort((a, b) => b[1].cost - a[1].cost);
+  return (
+    <div className="mt-3 border-t border-edge pt-3">
+      <div className="mb-2 flex items-baseline gap-2">
+        <span className="num text-sm text-ink">{day.date}</span>
+        <span className="num text-sm" style={{ color: 'var(--color-violet)' }}>
+          {fmtMoney(day.cost)}
+        </span>
+        <div className="flex-1" />
+        <button
+          type="button"
+          onClick={onClose}
+          className="font-mono text-[0.65rem] text-faint hover:text-dim"
+        >
+          close ✕
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+        <Stat label="messages" value={day.messages} />
+        <Stat label="tool calls" value={day.toolCalls} />
+        <Stat label="sessions" value={day.sessions} />
+        <Stat label="total tokens" value={fmtTokens(day.in + day.out + day.cacheRead + day.cacheCreate)} />
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div>
+          <div className="panel-title mb-1.5">tokens</div>
+          {TOKEN_ROWS.map(([label, k]) => (
+            <div key={k} className="flex justify-between border-b border-edge/60 py-0.5 text-xs">
+              <span className="text-dim">{label}</span>
+              <span className="num text-ink">{fmtTokens(day[k])}</span>
+            </div>
+          ))}
+        </div>
+
+        <div>
+          <div className="panel-title mb-1.5">by model</div>
+          {models.length === 0 && <div className="text-xs text-faint">no token usage</div>}
+          {models.map(([model, m]) => (
+            <div key={model} className="flex items-center gap-2 border-b border-edge/60 py-0.5 text-xs">
+              <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: modelColor(model) }} />
+              <span className="text-dim">{shortModel(model)}</span>
+              <div className="flex-1" />
+              <span className="num text-faint">{fmtTokens(m.out)} out</span>
+              <span className="num text-ink">{fmtMoney(m.cost)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }) {
+  return (
+    <div>
+      <div className="num text-lg text-ink">{value}</div>
+      <div className="panel-title">{label}</div>
     </div>
   );
 }

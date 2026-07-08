@@ -5,6 +5,7 @@ import Header from './components/Header.jsx';
 import SkillDeck from './components/SkillDeck.jsx';
 import RunConsole from './components/RunConsole.jsx';
 import CostChart from './components/CostChart.jsx';
+import WeeklyUsage from './components/WeeklyUsage.jsx';
 import StatTiles from './components/StatTiles.jsx';
 import Heatmap from './components/Heatmap.jsx';
 import VaultCard from './components/VaultCard.jsx';
@@ -79,6 +80,9 @@ export default function App() {
               </div>
               <div className="col-span-12 lg:col-span-4">
                 <StatTiles overview={overview.data} usage={usage.data} />
+              </div>
+              <div className="col-span-12">
+                <WeeklyUsage usage={usage.data} />
               </div>
               <div className="col-span-12">
                 <Heatmap activity={activity.data} />
