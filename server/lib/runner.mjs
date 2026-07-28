@@ -45,15 +45,21 @@ export function distillEvent(evt) {
     return { t: 'assistant', text: text || null, tools };
   }
   if (evt.type === 'result') {
+    // The CLI reports terminal API errors (expired OAuth, rate limit) as
+    // subtype "success" with is_error set, so subtype alone is not enough:
+    // trusting it recorded auth failures as healthy runs.
+    const failed = evt.subtype !== 'success' || evt.is_error === true;
     return {
       t: 'result',
-      ok: evt.subtype === 'success',
+      ok: !failed,
       text: typeof evt.result === 'string' ? evt.result : null,
       costUSD: evt.total_cost_usd ?? null,
       turns: evt.num_turns ?? null,
       durationMs: evt.duration_ms ?? null,
       sessionId: evt.session_id ?? null,
-      error: evt.subtype !== 'success' ? evt.subtype : null,
+      error: failed
+        ? (evt.subtype !== 'success' ? evt.subtype : evt.terminal_reason || 'is_error')
+        : null,
     };
   }
   return null;
@@ -191,7 +197,10 @@ export async function startRun(skill, input) {
       }
     }
     run.emitter.emit('end', run.status);
-    await persistRun(run).catch(() => {});
+    // a run missing from the index is invisible everywhere else, so say so loudly
+    await persistRun(run).catch((err) =>
+      console.error(`[runner] could not persist run ${run.id}:`, err),
+    );
     run.rawLines = []; // full transcript is on disk now — free the heap copy
     evictOldRuns();
   });
@@ -205,6 +214,34 @@ export function killRun(runId) {
   run.stderrTail.push('[agentic-os] cancelled by user');
   run.child?.kill('SIGTERM');
   return true;
+}
+
+async function appendSummary(summary) {
+  await fsp.mkdir(paths.runsDir, { recursive: true });
+  await fsp.appendFile(paths.runsIndex, JSON.stringify(summary) + '\n');
+}
+
+/**
+ * Record a run that never got off the ground (scheduler could not spawn it).
+ * Without this the failure would only exist in the server's stdout, so the
+ * dashboard and the morning briefing would both report "never ran".
+ */
+export async function recordFailedStart(skillId, message) {
+  const now = Date.now();
+  await appendSummary({
+    id: newRunId(),
+    skillId,
+    input: null,
+    status: 'error',
+    startedAt: now,
+    endedAt: now,
+    costUSD: null,
+    turns: null,
+    durationMs: 0,
+    sessionId: null,
+    ok: false,
+    summary: `failed to start: ${message}`.slice(0, 500),
+  });
 }
 
 async function persistRun(run) {
@@ -227,7 +264,7 @@ async function persistRun(run) {
     ok: run.result?.ok ?? false,
     summary: (run.result?.text || run.result?.error || '').slice(0, 500),
   };
-  await fsp.appendFile(paths.runsIndex, JSON.stringify(summary) + '\n');
+  await appendSummary(summary);
 }
 
 /** Run history (newest first), from disk plus any in-memory active runs. */
@@ -235,8 +272,9 @@ export async function listRuns({ limit = 50 } = {}) {
   let persisted = [];
   try {
     persisted = parseJsonl(await fsp.readFile(paths.runsIndex, 'utf8'));
-  } catch {
-    // none yet
+  } catch (err) {
+    // no runs yet is normal; anything else means the scheduler is flying blind
+    if (err.code !== 'ENOENT') throw err;
   }
   const active = [...runs.values()]
     .filter((r) => r.status === 'running')

@@ -13,6 +13,7 @@ import VaultGraph from './components/VaultGraph.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import ProjectList from './components/ProjectList.jsx';
 import RunHistory from './components/RunHistory.jsx';
+import AlertBanner from './components/AlertBanner.jsx';
 
 export default function App() {
   const overview = useApi('/overview', { pollMs: 15000 });
@@ -20,7 +21,7 @@ export default function App() {
   const activity = useApi('/activity');
   const vault = useApi('/vault');
   const projects = useApi('/projects');
-  const skillsApi = useApi('/skills');
+  const skillsApi = useApi('/skills', { pollMs: 60000 });
   const runs = useApi('/runs', { pollMs: 20000 });
 
   // { runId, skill, fallback? } — what the console is showing
@@ -73,6 +74,11 @@ export default function App() {
         <Header view={view} overview={overview.data} />
 
         <main className="mx-auto w-full max-w-[1400px] flex-1 space-y-4 p-6">
+          <AlertBanner
+            alerts={skillsApi.data?.alerts}
+            skills={skills}
+            onSelect={() => setView('skills')}
+          />
           {view === 'overview' && (
             <div className="grid grid-cols-12 gap-3">
               <div className="col-span-12 lg:col-span-8">

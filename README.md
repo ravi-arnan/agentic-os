@@ -38,6 +38,13 @@ minute, restart-safe: a skill that already ran today won't re-fire):
 - morning-briefing at 08:30 daily
 - session-journaler at 21:30 daily
 - status-sweep Fridays at 17:00
+- weekly-review Sundays at 20:00
+
+A slot missed because the server was down or the laptop was asleep is caught up
+on the next tick, but only within 6 hours of the slot. Older misses are dropped
+on purpose: a briefing fired half a day late is noise. A scheduled skill whose
+last run failed, or that has missed two of its own cycles, raises a banner at
+the top of the dashboard and a warning in the next morning briefing.
 
 Edit the `schedule: { hour, minute, weekday? }` fields in
 `server/skills/index.mjs` (weekday is JS `getDay()`: 0=Sun..6=Sat).

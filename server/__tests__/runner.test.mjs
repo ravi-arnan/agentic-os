@@ -41,6 +41,17 @@ describe('distillEvent', () => {
     expect(out).toMatchObject({ t: 'result', ok: true, text: 'done', costUSD: 0.12, turns: 4, error: null });
   });
 
+  test('an is_error result is not a success even when subtype says it is', () => {
+    // real shape emitted by the CLI when the OAuth session expired
+    const out = distillEvent({
+      type: 'result', subtype: 'success', is_error: true, terminal_reason: 'api_error',
+      result: 'Failed to authenticate: OAuth session expired and could not be refreshed',
+      total_cost_usd: 0, num_turns: 1, duration_ms: 886,
+    });
+    expect(out.ok).toBe(false);
+    expect(out.error).toBe('api_error');
+  });
+
   test('error result flags subtype', () => {
     const out = distillEvent({ type: 'result', subtype: 'error_max_turns' });
     expect(out.ok).toBe(false);
