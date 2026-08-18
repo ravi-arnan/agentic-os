@@ -7,8 +7,8 @@ import { getActivity, getStatsCache, getLiveSessions } from './lib/activity.mjs'
 import { getVaultHealth } from './lib/vault.mjs';
 import { sweepProjects } from './lib/projects.mjs';
 import { startRun, getRun, serializeRun, killRun, listRuns, lastRunsBySkill } from './lib/runner.mjs';
-import { getSkill, listSkills } from './skills/index.mjs';
-import { startScheduler } from './lib/scheduler.mjs';
+import { getSkill, listSkills, skills as allSkills } from './skills/index.mjs';
+import { startScheduler, skillAlerts } from './lib/scheduler.mjs';
 import { dayKey } from './lib/jsonl.mjs';
 
 const app = express();
@@ -62,7 +62,8 @@ app.get('/api/projects', asyncRoute(async (req, res) => {
 // --------------------------------------------------------------------------
 
 app.get('/api/skills', asyncRoute(async (req, res) => {
-  res.json({ skills: listSkills(), lastRuns: await lastRunsBySkill() });
+  const lastRuns = await lastRunsBySkill();
+  res.json({ skills: listSkills(), lastRuns, alerts: skillAlerts(allSkills, lastRuns) });
 }));
 
 app.post('/api/skills/:id/run', asyncRoute(async (req, res) => {

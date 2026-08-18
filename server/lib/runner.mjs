@@ -4,6 +4,7 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { config, paths } from '../config.mjs';
 import { parseJsonl } from './jsonl.mjs';
+import { getAgent, distillClaudeEvent } from './agents.mjs';
 
 const DEFAULT_TIMEOUT_MS = 12 * 60 * 1000;
 const MAX_FINISHED_RUNS = 20; // finished runs kept in memory for console replay
@@ -19,45 +20,10 @@ function evictOldRuns() {
 
 /**
  * Compact a raw stream-json event into what the UI needs.
- * Returns null for events not worth showing.
+ * Returns null for events not worth showing. Lives in agents.mjs now that
+ * every CLI has its own parser; re-exported here for existing callers.
  */
-export function distillEvent(evt) {
-  if (!evt || typeof evt !== 'object') return null;
-  if (evt.type === 'system' && evt.subtype === 'init') {
-    return { t: 'init', model: evt.model || null, sessionId: evt.session_id || null };
-  }
-  if (evt.type === 'assistant') {
-    const content = evt.message?.content;
-    if (!Array.isArray(content)) return null;
-    const text = content
-      .filter((c) => c?.type === 'text')
-      .map((c) => c.text)
-      .join('');
-    const tools = content
-      .filter((c) => c?.type === 'tool_use')
-      .map((c) => ({
-        name: c.name,
-        target:
-          c.input?.file_path || c.input?.path || c.input?.command?.slice(0, 80) ||
-          c.input?.pattern || null,
-      }));
-    if (!text && tools.length === 0) return null;
-    return { t: 'assistant', text: text || null, tools };
-  }
-  if (evt.type === 'result') {
-    return {
-      t: 'result',
-      ok: evt.subtype === 'success',
-      text: typeof evt.result === 'string' ? evt.result : null,
-      costUSD: evt.total_cost_usd ?? null,
-      turns: evt.num_turns ?? null,
-      durationMs: evt.duration_ms ?? null,
-      sessionId: evt.session_id ?? null,
-      error: evt.subtype !== 'success' ? evt.subtype : null,
-    };
-  }
-  return null;
-}
+export const distillEvent = distillClaudeEvent;
 
 function newRunId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -78,6 +44,7 @@ export function serializeRun(run) {
   return {
     id: run.id,
     skillId: run.skillId,
+    agent: run.agent || 'claude',
     input: run.input || null,
     status: run.status,
     startedAt: run.startedAt,
@@ -90,18 +57,13 @@ export function serializeRun(run) {
 export async function startRun(skill, input) {
   const prompt = await skill.buildPrompt(input);
   const id = newRunId();
-  const args = [
-    '-p', prompt,
-    '--output-format', 'stream-json',
-    '--verbose',
-    '--permission-mode', skill.permissionMode || 'acceptEdits',
-  ];
-  if (skill.allowedTools?.length) args.push('--allowedTools', ...skill.allowedTools);
-  if (skill.model) args.push('--model', skill.model);
+  const agent = getAgent(skill.agent);
+  const args = agent.args(skill, prompt);
 
   const run = {
     id,
     skillId: skill.id,
+    agent: skill.agent || 'claude',
     input: input || null,
     status: 'running',
     startedAt: Date.now(),
@@ -116,7 +78,7 @@ export async function startRun(skill, input) {
   run.emitter.setMaxListeners(50);
   runs.set(id, run);
 
-  const child = spawn(config.claudeBin, args, {
+  const child = spawn(agent.bin(config), args, {
     cwd: skill.cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env },
@@ -139,13 +101,18 @@ export async function startRun(skill, input) {
       buf = buf.slice(idx + 1);
       if (!line.trim()) continue;
       run.rawLines.push(line);
-      let evt;
-      try {
-        evt = JSON.parse(line);
-      } catch {
-        continue;
+      let compact;
+      if (agent.mode === 'ndjson') {
+        let evt;
+        try {
+          evt = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        compact = agent.parse(evt);
+      } else {
+        compact = agent.parse(line);
       }
-      const compact = distillEvent(evt);
       if (compact) {
         if (compact.t === 'result') {
           run.result = compact;
@@ -165,6 +132,13 @@ export async function startRun(skill, input) {
   child.on('close', async (code) => {
     clearTimeout(timeout);
     run.endedAt = Date.now();
+    // text-only agents (agy, opencode) never print a result event: build one
+    // from what they said, otherwise every run of theirs reads as a failure.
+    if (!run.result && typeof agent.result === 'function') {
+      run.result = agent.result(run, code);
+      run.events.push(run.result);
+      run.emitter.emit('event', run.result);
+    }
     run.status = run.result?.ok ? 'done' : 'error';
     if (!run.result) {
       run.result = {
@@ -191,7 +165,10 @@ export async function startRun(skill, input) {
       }
     }
     run.emitter.emit('end', run.status);
-    await persistRun(run).catch(() => {});
+    // a run missing from the index is invisible everywhere else, so say so loudly
+    await persistRun(run).catch((err) =>
+      console.error(`[runner] could not persist run ${run.id}:`, err),
+    );
     run.rawLines = []; // full transcript is on disk now — free the heap copy
     evictOldRuns();
   });
@@ -207,6 +184,34 @@ export function killRun(runId) {
   return true;
 }
 
+async function appendSummary(summary) {
+  await fsp.mkdir(paths.runsDir, { recursive: true });
+  await fsp.appendFile(paths.runsIndex, JSON.stringify(summary) + '\n');
+}
+
+/**
+ * Record a run that never got off the ground (scheduler could not spawn it).
+ * Without this the failure would only exist in the server's stdout, so the
+ * dashboard and the morning briefing would both report "never ran".
+ */
+export async function recordFailedStart(skillId, message) {
+  const now = Date.now();
+  await appendSummary({
+    id: newRunId(),
+    skillId,
+    input: null,
+    status: 'error',
+    startedAt: now,
+    endedAt: now,
+    costUSD: null,
+    turns: null,
+    durationMs: 0,
+    sessionId: null,
+    ok: false,
+    summary: `failed to start: ${message}`.slice(0, 500),
+  });
+}
+
 async function persistRun(run) {
   await fsp.mkdir(paths.runsDir, { recursive: true });
   await fsp.writeFile(
@@ -216,6 +221,7 @@ async function persistRun(run) {
   const summary = {
     id: run.id,
     skillId: run.skillId,
+    agent: run.agent || 'claude',
     input: run.input,
     status: run.status,
     startedAt: run.startedAt,
@@ -227,7 +233,7 @@ async function persistRun(run) {
     ok: run.result?.ok ?? false,
     summary: (run.result?.text || run.result?.error || '').slice(0, 500),
   };
-  await fsp.appendFile(paths.runsIndex, JSON.stringify(summary) + '\n');
+  await appendSummary(summary);
 }
 
 /** Run history (newest first), from disk plus any in-memory active runs. */
@@ -235,8 +241,9 @@ export async function listRuns({ limit = 50 } = {}) {
   let persisted = [];
   try {
     persisted = parseJsonl(await fsp.readFile(paths.runsIndex, 'utf8'));
-  } catch {
-    // none yet
+  } catch (err) {
+    // no runs yet is normal; anything else means the scheduler is flying blind
+    if (err.code !== 'ENOENT') throw err;
   }
   const active = [...runs.values()]
     .filter((r) => r.status === 'running')

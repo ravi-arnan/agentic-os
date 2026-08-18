@@ -111,8 +111,9 @@ async function todayDigest() {
     if (todayRow) {
       costLine = `Spend today: $${todayRow.cost.toFixed(2)}, ${todayRow.messages} messages, ${todayRow.toolCalls} tool calls, models: ${Object.keys(todayRow.byModel).join(', ')}`;
     }
-  } catch {
-    // usage scan failed — omit
+  } catch (err) {
+    // say it out loud in the prompt: a silently missing cost line looks like a zero-spend day
+    costLine = `Spend today: (gagal dibaca: ${String(err.message || err).slice(0, 120)})`;
   }
 
   const projLines = [...perProject.entries()]

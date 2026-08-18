@@ -38,10 +38,43 @@ minute, restart-safe: a skill that already ran today won't re-fire):
 - morning-briefing at 08:30 daily
 - session-journaler at 21:30 daily
 - status-sweep Fridays at 17:00
+- weekly-review Sundays at 20:00
+
+A slot missed because the server was down or the laptop was asleep is caught up
+on the next tick, but only within 6 hours of the slot. Older misses are dropped
+on purpose: a briefing fired half a day late is noise. A scheduled skill whose
+last run failed, or that has missed two of its own cycles, raises a banner at
+the top of the dashboard and a warning in the next morning briefing.
 
 Edit the `schedule: { hour, minute, weekday? }` fields in
 `server/skills/index.mjs` (weekday is JS `getDay()`: 0=Sun..6=Sat).
 Disable all scheduling with `AGENTIC_OS_NO_SCHEDULE=1`.
+
+## Which CLI runs a skill
+
+A skill picks its backend with `agent: 'opencode'` (default `'claude'`). Every
+adapter lives in `server/lib/agents.mjs` — argv builder plus a parser that
+normalizes the CLI's output into the same `{t:'init'|'assistant'|'result'}`
+events the dashboard already renders.
+
+| agent | CLI | output | verified |
+|---|---|---|---|
+| `claude` | Claude Code | `--output-format stream-json` | yes |
+| `agy` | Antigravity | plain text (`--print`) | yes |
+| `opencode` | opencode | plain text (`run`) | yes |
+| `cursor` | cursor-agent | stream-json (same envelope as Claude) | startup only, account out of quota |
+| `copilot` | GitHub Copilot CLI | `--output-format json` (NDJSON) | startup + error only, monthly quota exceeded |
+
+Caveats worth knowing before switching a skill over:
+
+- `allowedTools` is Claude syntax. Other CLIs get their own coarse equivalent
+  (`--force`, `--allow-all-tools`, `--mode accept-edits`), so a skill that
+  leans on a tight tool allowlist is safest left on `claude`.
+- `opencode run` auto-rejects every permission prompt, so write skills need
+  the `--dangerously-skip-permissions` the adapter adds for `acceptEdits`.
+- Cost metrics still come from `~/.claude` and stay Claude-only. Text agents
+  report no cost or turn count.
+- Per-agent model override: `models: { opencode: 'big-pickle' }` on the skill.
 
 ## Always-on + phone access (deploy)
 
