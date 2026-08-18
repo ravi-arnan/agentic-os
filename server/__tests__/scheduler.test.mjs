@@ -67,9 +67,19 @@ describe('dueSkills', () => {
     expect(dueSkills(skills, prev, now, []).map((s) => s.id)).toEqual(['a']);
   });
 
-  test('skips a skill that already ran today (restart safety)', () => {
-    const runs = [{ skillId: 'a', startedAt: at(2026, 7, 4, 8, 0), status: 'done' }];
+  test('a restart does not re-fire the slot it already served', () => {
+    // The real restart case: the run happened AT the slot, then the process
+    // came back inside the catch-up window and saw the same slot again.
+    const runs = [{ skillId: 'a', startedAt: at(2026, 7, 4, 8, 30), status: 'done' }];
     expect(dueSkills(skills, prev, now, runs)).toEqual([]);
+  });
+
+  test('a manual run before the slot does not cancel the slot', () => {
+    // Deliberate: an ad-hoc run at 08:00 is a different request from the
+    // 08:30 schedule, and suppressing the schedule because of it was an
+    // accident of the old calendar-day check.
+    const runs = [{ skillId: 'a', startedAt: at(2026, 7, 4, 8, 0), status: 'done' }];
+    expect(dueSkills(skills, prev, now, runs).map((s) => s.id)).toEqual(['a']);
   });
 
   test('an errored earlier run does not block a retry', () => {
@@ -81,6 +91,57 @@ describe('dueSkills', () => {
     // server starts at 09:00; the 08:30 slot is inside the 6h catch-up reach
     const from = at(2026, 7, 4, 9, 0) - 6 * 3600 * 1000;
     expect(dueSkills(skills, from, at(2026, 7, 4, 9, 0), []).map((s) => s.id)).toEqual(['a']);
+  });
+
+  test('a restart after midnight does not re-fire last night slot', () => {
+    // The live regression: service restarted 19 Aug 02:32, the 21:30 journaler
+    // had already completed at 21:31 the evening before, and it ran again.
+    const evening = [
+      { id: 'j', schedule: { hour: 21, minute: 30 }, needsInput: false },
+    ];
+    const now = at(2026, 7, 5, 2, 32);
+    const from = now - 6 * 3600 * 1000; // first tick reaches back CATCHUP_MS
+    const runs = [{ skillId: 'j', startedAt: at(2026, 7, 4, 21, 31), status: 'done' }];
+
+    expect(dueSkills(evening, from, now, [])).toHaveLength(1); // genuinely missed
+    expect(dueSkills(evening, from, now, runs)).toEqual([]); // already served
+  });
+
+  test('a slot whose run failed last night is still retried after a restart', () => {
+    const evening = [
+      { id: 'j', schedule: { hour: 21, minute: 30 }, needsInput: false },
+    ];
+    const now = at(2026, 7, 5, 2, 32);
+    const from = now - 6 * 3600 * 1000;
+    const runs = [{ skillId: 'j', startedAt: at(2026, 7, 4, 21, 31), status: 'error' }];
+
+    expect(dueSkills(evening, from, now, runs).map((s) => s.id)).toEqual(['j']);
+  });
+
+  test('a run from the cycle before does not serve this slot', () => {
+    // Server was down all of the 4th. The run on the 3rd started a minute
+    // after its OWN slot, which is exactly what a one-cycle-wide window would
+    // have mistaken for this slot being done.
+    const evening = [
+      { id: 'j', schedule: { hour: 21, minute: 30 }, needsInput: false },
+    ];
+    const now = at(2026, 7, 5, 2, 32);
+    const from = now - 6 * 3600 * 1000;
+    const runs = [{ skillId: 'j', startedAt: at(2026, 7, 3, 21, 31), status: 'done' }];
+
+    expect(dueSkills(evening, from, now, runs).map((s) => s.id)).toEqual(['j']);
+  });
+
+  test('a weekly slot dedupes over a week, not a day', () => {
+    const weekly = [
+      { id: 'w', schedule: { hour: 20, minute: 0, weekday: 0 }, needsInput: false },
+    ];
+    const now = at(2026, 7, 6, 1, 0); // Monday 01:00
+    const from = now - 6 * 3600 * 1000;
+    const runs = [{ skillId: 'w', startedAt: at(2026, 7, 5, 20, 1), status: 'done' }];
+
+    expect(dueSkills(weekly, from, now, [])).toHaveLength(1);
+    expect(dueSkills(weekly, from, now, runs)).toEqual([]);
   });
 
   test('a slot missed long ago is not resurrected', () => {

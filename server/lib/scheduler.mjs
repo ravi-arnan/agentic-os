@@ -1,6 +1,5 @@
 import { skills } from '../skills/index.mjs';
 import { startRun, listRuns, recordFailedStart } from './runner.mjs';
-import { dayKey } from './jsonl.mjs';
 
 const TICK_MS = 60 * 1000;
 const DAY_MS = 24 * 3600 * 1000;
@@ -12,21 +11,28 @@ const CATCHUP_MS = 6 * 3600 * 1000;
 const STALE_CYCLES = 2;
 
 /**
- * True when schedule {hour, minute?, weekday?} fires inside (prevMs, nowMs].
- * Checks today's and yesterday's target so a tick straddling midnight
- * still catches a late-evening schedule. weekday uses JS getDay() (0=Sun).
+ * The slot timestamp that schedule {hour, minute?, weekday?} fires inside
+ * (prevMs, nowMs], or null. Checks today's and yesterday's target so a tick
+ * straddling midnight still catches a late-evening schedule. weekday uses JS
+ * getDay() (0=Sun).
  */
-export function isDue(schedule, prevMs, nowMs) {
-  if (!schedule || typeof schedule.hour !== 'number') return false;
+export function dueAt(schedule, prevMs, nowMs) {
+  if (!schedule || typeof schedule.hour !== 'number') return null;
   for (const dayOffset of [0, -1]) {
     const target = new Date(nowMs + dayOffset * DAY_MS);
     target.setHours(schedule.hour, schedule.minute || 0, 0, 0);
     if (schedule.weekday != null && target.getDay() !== schedule.weekday) continue;
     const t = target.getTime();
-    if (t > prevMs && t <= nowMs) return true;
+    if (t > prevMs && t <= nowMs) return t;
   }
-  return false;
+  return null;
 }
+
+/** True when the schedule fires inside (prevMs, nowMs]. */
+export function isDue(schedule, prevMs, nowMs) {
+  return dueAt(schedule, prevMs, nowMs) !== null;
+}
+
 
 /** True if a schedule should run on the given calendar day (weekday-aware). */
 export function wasDueOnDay(schedule, date) {
@@ -34,16 +40,33 @@ export function wasDueOnDay(schedule, date) {
   return schedule.weekday == null || date.getDay() === schedule.weekday;
 }
 
-/** Pure selection of which skills should fire, given run history. */
-export function dueSkills(allSkills, prevMs, nowMs, runsToday) {
-  const ranToday = new Set(
-    runsToday
-      .filter((r) => dayKey(r.startedAt) === dayKey(nowMs) && r.status !== 'error')
-      .map((r) => r.skillId),
-  );
-  return allSkills.filter(
-    (s) => s.schedule && !s.needsInput && !ranToday.has(s.id) && isDue(s.schedule, prevMs, nowMs),
-  );
+/**
+ * Pure selection of which skills should fire, given run history.
+ *
+ * A slot is served once a non-errored run of that skill started at or after it.
+ * Keying this on the calendar day instead was wrong in both directions: dueAt
+ * deliberately reaches back to yesterday's slot, but "ran today" could not see
+ * yesterday's run, so restarting the server in the small hours re-fired a job
+ * that had already succeeded the evening before. Observed live on 2026-08-19:
+ * a restart at 02:32 ran the journaler a second time for the 21:30 slot it had
+ * completed at 21:31.
+ *
+ * Comparing against the slot itself, rather than a window that opens some time
+ * before it, is what keeps the rule unambiguous. A window reaching back one
+ * cycle lets last cycle's run, if it started even a minute late, look like it
+ * served this one. The cost is that a manual run shortly BEFORE a slot no
+ * longer suppresses that slot, which is the right call anyway: it is a
+ * different request from the scheduled one.
+ */
+export function dueSkills(allSkills, prevMs, nowMs, runs) {
+  const served = (skill, slot) =>
+    runs.some((r) => r.skillId === skill.id && r.status !== 'error' && r.startedAt >= slot);
+
+  return allSkills.filter((skill) => {
+    if (!skill.schedule || skill.needsInput) return false;
+    const slot = dueAt(skill.schedule, prevMs, nowMs);
+    return slot !== null && !served(skill, slot);
+  });
 }
 
 function firstLine(text) {
