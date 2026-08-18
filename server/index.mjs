@@ -10,8 +10,10 @@ import { startRun, getRun, serializeRun, killRun, listRuns, lastRunsBySkill } fr
 import { getSkill, listSkills, skills as allSkills } from './skills/index.mjs';
 import { startScheduler, skillAlerts } from './lib/scheduler.mjs';
 import { dayKey } from './lib/jsonl.mjs';
+import { originGuard } from './lib/origin-guard.mjs';
 
 const app = express();
+app.use(originGuard);
 app.use(express.json({ limit: '256kb' }));
 
 const asyncRoute = (fn) => (req, res) =>
