@@ -4,6 +4,7 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { config, paths } from '../config.mjs';
 import { parseJsonl } from './jsonl.mjs';
+import { getAgent, distillClaudeEvent } from './agents.mjs';
 
 const DEFAULT_TIMEOUT_MS = 12 * 60 * 1000;
 const MAX_FINISHED_RUNS = 20; // finished runs kept in memory for console replay
@@ -19,51 +20,10 @@ function evictOldRuns() {
 
 /**
  * Compact a raw stream-json event into what the UI needs.
- * Returns null for events not worth showing.
+ * Returns null for events not worth showing. Lives in agents.mjs now that
+ * every CLI has its own parser; re-exported here for existing callers.
  */
-export function distillEvent(evt) {
-  if (!evt || typeof evt !== 'object') return null;
-  if (evt.type === 'system' && evt.subtype === 'init') {
-    return { t: 'init', model: evt.model || null, sessionId: evt.session_id || null };
-  }
-  if (evt.type === 'assistant') {
-    const content = evt.message?.content;
-    if (!Array.isArray(content)) return null;
-    const text = content
-      .filter((c) => c?.type === 'text')
-      .map((c) => c.text)
-      .join('');
-    const tools = content
-      .filter((c) => c?.type === 'tool_use')
-      .map((c) => ({
-        name: c.name,
-        target:
-          c.input?.file_path || c.input?.path || c.input?.command?.slice(0, 80) ||
-          c.input?.pattern || null,
-      }));
-    if (!text && tools.length === 0) return null;
-    return { t: 'assistant', text: text || null, tools };
-  }
-  if (evt.type === 'result') {
-    // The CLI reports terminal API errors (expired OAuth, rate limit) as
-    // subtype "success" with is_error set, so subtype alone is not enough:
-    // trusting it recorded auth failures as healthy runs.
-    const failed = evt.subtype !== 'success' || evt.is_error === true;
-    return {
-      t: 'result',
-      ok: !failed,
-      text: typeof evt.result === 'string' ? evt.result : null,
-      costUSD: evt.total_cost_usd ?? null,
-      turns: evt.num_turns ?? null,
-      durationMs: evt.duration_ms ?? null,
-      sessionId: evt.session_id ?? null,
-      error: failed
-        ? (evt.subtype !== 'success' ? evt.subtype : evt.terminal_reason || 'is_error')
-        : null,
-    };
-  }
-  return null;
-}
+export const distillEvent = distillClaudeEvent;
 
 function newRunId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -84,6 +44,7 @@ export function serializeRun(run) {
   return {
     id: run.id,
     skillId: run.skillId,
+    agent: run.agent || 'claude',
     input: run.input || null,
     status: run.status,
     startedAt: run.startedAt,
@@ -96,18 +57,13 @@ export function serializeRun(run) {
 export async function startRun(skill, input) {
   const prompt = await skill.buildPrompt(input);
   const id = newRunId();
-  const args = [
-    '-p', prompt,
-    '--output-format', 'stream-json',
-    '--verbose',
-    '--permission-mode', skill.permissionMode || 'acceptEdits',
-  ];
-  if (skill.allowedTools?.length) args.push('--allowedTools', ...skill.allowedTools);
-  if (skill.model) args.push('--model', skill.model);
+  const agent = getAgent(skill.agent);
+  const args = agent.args(skill, prompt);
 
   const run = {
     id,
     skillId: skill.id,
+    agent: skill.agent || 'claude',
     input: input || null,
     status: 'running',
     startedAt: Date.now(),
@@ -122,7 +78,7 @@ export async function startRun(skill, input) {
   run.emitter.setMaxListeners(50);
   runs.set(id, run);
 
-  const child = spawn(config.claudeBin, args, {
+  const child = spawn(agent.bin(config), args, {
     cwd: skill.cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env },
@@ -145,13 +101,18 @@ export async function startRun(skill, input) {
       buf = buf.slice(idx + 1);
       if (!line.trim()) continue;
       run.rawLines.push(line);
-      let evt;
-      try {
-        evt = JSON.parse(line);
-      } catch {
-        continue;
+      let compact;
+      if (agent.mode === 'ndjson') {
+        let evt;
+        try {
+          evt = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        compact = agent.parse(evt);
+      } else {
+        compact = agent.parse(line);
       }
-      const compact = distillEvent(evt);
       if (compact) {
         if (compact.t === 'result') {
           run.result = compact;
@@ -171,6 +132,13 @@ export async function startRun(skill, input) {
   child.on('close', async (code) => {
     clearTimeout(timeout);
     run.endedAt = Date.now();
+    // text-only agents (agy, opencode) never print a result event: build one
+    // from what they said, otherwise every run of theirs reads as a failure.
+    if (!run.result && typeof agent.result === 'function') {
+      run.result = agent.result(run, code);
+      run.events.push(run.result);
+      run.emitter.emit('event', run.result);
+    }
     run.status = run.result?.ok ? 'done' : 'error';
     if (!run.result) {
       run.result = {
@@ -253,6 +221,7 @@ async function persistRun(run) {
   const summary = {
     id: run.id,
     skillId: run.skillId,
+    agent: run.agent || 'claude',
     input: run.input,
     status: run.status,
     startedAt: run.startedAt,

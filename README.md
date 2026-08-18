@@ -50,6 +50,32 @@ Edit the `schedule: { hour, minute, weekday? }` fields in
 `server/skills/index.mjs` (weekday is JS `getDay()`: 0=Sun..6=Sat).
 Disable all scheduling with `AGENTIC_OS_NO_SCHEDULE=1`.
 
+## Which CLI runs a skill
+
+A skill picks its backend with `agent: 'opencode'` (default `'claude'`). Every
+adapter lives in `server/lib/agents.mjs` — argv builder plus a parser that
+normalizes the CLI's output into the same `{t:'init'|'assistant'|'result'}`
+events the dashboard already renders.
+
+| agent | CLI | output | verified |
+|---|---|---|---|
+| `claude` | Claude Code | `--output-format stream-json` | yes |
+| `agy` | Antigravity | plain text (`--print`) | yes |
+| `opencode` | opencode | plain text (`run`) | yes |
+| `cursor` | cursor-agent | stream-json (same envelope as Claude) | startup only, account out of quota |
+| `copilot` | GitHub Copilot CLI | `--output-format json` (NDJSON) | startup + error only, monthly quota exceeded |
+
+Caveats worth knowing before switching a skill over:
+
+- `allowedTools` is Claude syntax. Other CLIs get their own coarse equivalent
+  (`--force`, `--allow-all-tools`, `--mode accept-edits`), so a skill that
+  leans on a tight tool allowlist is safest left on `claude`.
+- `opencode run` auto-rejects every permission prompt, so write skills need
+  the `--dangerously-skip-permissions` the adapter adds for `acceptEdits`.
+- Cost metrics still come from `~/.claude` and stay Claude-only. Text agents
+  report no cost or turn count.
+- Per-agent model override: `models: { opencode: 'big-pickle' }` on the skill.
+
 ## Always-on + phone access (deploy)
 
 This app runs *on the laptop* — it shells out to the `claude` binary and
