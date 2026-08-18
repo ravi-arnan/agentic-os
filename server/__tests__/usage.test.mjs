@@ -103,17 +103,68 @@ describe('summarizeUsage', () => {
 });
 
 describe('estimateCost', () => {
+  const mtok = { input_tokens: 1e6, output_tokens: 1e6, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+
   test('prices tokens per model tier', () => {
-    const usage = { input_tokens: 1e6, output_tokens: 1e6, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
-    expect(estimateCost('claude-haiku-4-5', usage)).toBeCloseTo(6);
-    expect(estimateCost('claude-opus-4-8', usage)).toBeCloseTo(90);
-    expect(estimateCost('<synthetic>', usage)).toBe(0);
+    expect(estimateCost('claude-haiku-4-5', mtok)).toBeCloseTo(6);
+    expect(estimateCost('claude-sonnet-5', mtok)).toBeCloseTo(18);
+    expect(estimateCost('claude-opus-5', mtok)).toBeCloseTo(30);
+    expect(estimateCost('claude-fable-5', mtok)).toBeCloseTo(60);
+    expect(estimateCost('<synthetic>', mtok)).toBe(0);
   });
 
-  test('subscription records (costUSD=0) fall back to estimate', () => {
+  test('models served by a free provider cost nothing', () => {
+    // These arrive through 9router and opencode. The old table fell through to
+    // Sonnet rates for anything it did not recognise, which invented spend.
+    for (const model of [
+      'nvidia/nemotron-3-ultra-550b-a55b',
+      'gemini-3.6-flash',
+      'deepseek-v4-flash-free',
+      'openai/gpt-oss-120b',
+    ]) {
+      expect(estimateCost(model, mtok)).toBe(0);
+    }
+  });
+
+  test('an unrecognised Claude model is priced, not hidden', () => {
+    // Better to over-count a model this table has not learned than to report
+    // a real Claude session as free.
+    expect(estimateCost('claude-something-7', mtok)).toBeCloseTo(30);
+  });
+
+  test('a one-hour cache write costs more than a five-minute one', () => {
+    const base = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0 };
+    const short = estimateCost('claude-opus-5', {
+      ...base,
+      cache_creation_input_tokens: 1e6,
+      cache_creation: { ephemeral_5m_input_tokens: 1e6, ephemeral_1h_input_tokens: 0 },
+    });
+    const long = estimateCost('claude-opus-5', {
+      ...base,
+      cache_creation_input_tokens: 1e6,
+      cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 1e6 },
+    });
+    expect(short).toBeCloseTo(5 * 1.25);
+    expect(long).toBeCloseTo(5 * 2);
+  });
+
+  test('a record without the per-TTL breakdown keeps the five-minute rate', () => {
+    const legacy = estimateCost('claude-opus-5', {
+      input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 1e6,
+    });
+    expect(legacy).toBeCloseTo(5 * 1.25);
+  });
+
+  test('cache reads cost a tenth of input', () => {
+    const usage = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 1e6, cache_creation_input_tokens: 0 };
+    expect(estimateCost('claude-opus-5', usage)).toBeCloseTo(0.5);
+  });
+
+  test('subscription records (no cost field) fall back to estimate', () => {
     const agg = aggregateRecords([asst({ costUSD: 0 })]);
-    // 100 in + 50 out + 1000 cacheRead + 200 cacheWrite at fable/opus rates
-    const expected = (100 * 15 + 50 * 75 + 1000 * 1.5 + 200 * 18.75) / 1e6;
+    // 100 in + 50 out + 1000 cacheRead + 200 cacheWrite at fable rates
+    const expected = (100 * 10 + 50 * 50 + 1000 * 1 + 200 * 12.5) / 1e6;
     expect(agg.costUSD).toBeCloseTo(expected);
   });
 

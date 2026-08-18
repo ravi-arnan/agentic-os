@@ -4,26 +4,50 @@ import path from 'node:path';
 import { paths } from '../config.mjs';
 import { eachJsonlRecord, dayKey } from './jsonl.mjs';
 
-const CACHE_VERSION = 3;
+const CACHE_VERSION = 4;
 
-// $/MTok: [input, output, cacheRead, cacheWrite]. Transcripts carry costUSD=0
-// on subscription plans, so dashboard cost is an estimate from tokens.
+// Base $/MTok as [input, output], straight off the Anthropic price list.
+// Transcripts carry no cost field at all, so dashboard cost is estimated from
+// tokens. Cache rates are derived rather than listed: a read costs 0.1x input,
+// a write 1.25x input at the 5-minute TTL and 2x at the 1-hour TTL.
 const PRICING = [
-  [/opus/i, [15, 75, 1.5, 18.75]],
-  [/fable/i, [15, 75, 1.5, 18.75]], // flagship tier assumption
-  [/sonnet/i, [3, 15, 0.3, 3.75]],
-  [/haiku/i, [1, 5, 0.1, 1.25]],
-  [/synthetic/i, [0, 0, 0, 0]],
+  [/fable|mythos/i, [10, 50]],
+  [/opus/i, [5, 25]],
+  [/sonnet/i, [3, 15]],
+  [/haiku/i, [1, 5]],
 ];
+
+const CACHE_READ = 0.1;
+const CACHE_WRITE_5M = 1.25;
+const CACHE_WRITE_1H = 2;
+
+// Fallback for a Claude model this table has not learned yet. Opus is the
+// dearest tier, so an unknown one is over-counted rather than hidden.
+const UNKNOWN_CLAUDE = [5, 25];
 
 export function estimateCost(model, usage) {
   if (!usage) return 0;
-  const rates = PRICING.find(([re]) => re.test(model || ''))?.[1] || PRICING[2][1];
+  const name = model || '';
+  const base = PRICING.find(([re]) => re.test(name))?.[1]
+    || (/^claude-/i.test(name) ? UNKNOWN_CLAUDE : null);
+  // Everything else is served by a free provider through 9router or opencode
+  // (nemotron, gemini, deepseek, minimax). The old table fell back to Sonnet
+  // rates for these, inventing spend that never happened.
+  if (!base) return 0;
+  const [input, output] = base;
+
+  const write = usage.cache_creation_input_tokens || 0;
+  // Records predating the per-TTL breakdown carry only the total; charging
+  // those at the 5-minute rate keeps the old behaviour for them.
+  const write1h = usage.cache_creation?.ephemeral_1h_input_tokens || 0;
+  const write5m = Math.max(0, write - write1h);
+
   return (
-    ((usage.input_tokens || 0) * rates[0] +
-      (usage.output_tokens || 0) * rates[1] +
-      (usage.cache_read_input_tokens || 0) * rates[2] +
-      (usage.cache_creation_input_tokens || 0) * rates[3]) /
+    ((usage.input_tokens || 0) * input +
+      (usage.output_tokens || 0) * output +
+      (usage.cache_read_input_tokens || 0) * input * CACHE_READ +
+      write5m * input * CACHE_WRITE_5M +
+      write1h * input * CACHE_WRITE_1H) /
     1e6
   );
 }
