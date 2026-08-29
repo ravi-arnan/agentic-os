@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.mjs';
 import { scanUsage, summarizeUsage } from './lib/usage.mjs';
+import { scanOpencodeUsage } from './lib/opencode-usage.mjs';
 import { getActivity, getStatsCache, getLiveSessions } from './lib/activity.mjs';
 import { getVaultHealth } from './lib/vault.mjs';
 import { sweepProjects } from './lib/projects.mjs';
@@ -27,19 +28,24 @@ const asyncRoute = (fn) => (req, res) =>
 // --------------------------------------------------------------------------
 
 app.get('/api/overview', asyncRoute(async (req, res) => {
-  const [liveSessions, stats, usage] = await Promise.all([
+  const [liveSessions, stats, claudeAggs, opencodeAggs] = await Promise.all([
     getLiveSessions(),
     getStatsCache(),
-    scanUsage().then((aggs) => summarizeUsage(aggs, { days: 2 })),
+    scanUsage(),
+    scanOpencodeUsage().catch(() => []),
   ]);
+  const usage = summarizeUsage([...claudeAggs, ...opencodeAggs], { days: 2 });
   const today = usage.daily.find((d) => d.date === dayKey(Date.now())) || null;
   res.json({ liveSessions, stats, today, totals: usage.totals });
 }));
 
 app.get('/api/usage', asyncRoute(async (req, res) => {
   const days = Math.min(365, Number(req.query.days) || 45);
-  const aggs = await scanUsage();
-  res.json(summarizeUsage(aggs, { days }));
+  const [claudeAggs, opencodeAggs] = await Promise.all([
+    scanUsage(),
+    scanOpencodeUsage().catch(() => []),
+  ]);
+  res.json(summarizeUsage([...claudeAggs, ...opencodeAggs], { days }));
 }));
 
 app.get('/api/activity', asyncRoute(async (req, res) => {
@@ -51,9 +57,12 @@ app.get('/api/vault', asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/projects', asyncRoute(async (req, res) => {
-  const aggs = await scanUsage();
+  const [claudeAggs, opencodeAggs] = await Promise.all([
+    scanUsage(),
+    scanOpencodeUsage().catch(() => []),
+  ]);
   const byProject = new Map();
-  for (const p of summarizeUsage(aggs, { days: 3650 }).perProject) {
+  for (const p of summarizeUsage([...claudeAggs, ...opencodeAggs], { days: 3650 }).perProject) {
     byProject.set(p.project, { lastActive: p.lastActive, cost: p.cost, sessions: p.sessions });
   }
   res.json(await sweepProjects(byProject));

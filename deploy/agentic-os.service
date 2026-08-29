@@ -10,7 +10,8 @@ WorkingDirectory=/home/ravi/Projects/agentic-os
 Environment=NODE_ENV=production
 # claude lives in ~/.local/bin, node in /usr/local/bin — the skill runner
 # spawns `claude`, so both must be on PATH for the service.
-Environment=PATH=/home/ravi/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=/home/ravi/.local/bin:/etc/profiles/per-user/ravi/bin:/run/current-system/sw/bin:/usr/local/bin:/usr/bin:/bin
+Environment=OPENCODE_BIN=/etc/profiles/per-user/ravi/bin/opencode
 ExecStart=/usr/local/bin/node server/index.mjs
 Restart=on-failure
 RestartSec=5

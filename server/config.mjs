@@ -8,6 +8,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const config = {
   port: Number(process.env.AGENTIC_OS_PORT || 4177),
   host: process.env.AGENTIC_OS_HOST || '127.0.0.1',
+  defaultAgent: process.env.AGENTIC_OS_AGENT || 'opencode',
   claudeDir: process.env.CLAUDE_DIR || path.join(HOME, '.claude'),
   projectsRoot: process.env.PROJECTS_ROOT || path.join(HOME, 'Projects'),
   vaultDir: process.env.VAULT_DIR || path.join(HOME, 'Projects', 'secondbrain'),
@@ -17,6 +18,7 @@ export const config = {
   dataDir: process.env.AGENTIC_OS_DATA || path.join(ROOT, 'data'),
   distDir: path.join(ROOT, 'dist'),
   claudeBin: process.env.CLAUDE_BIN || 'claude',
+  opencodeBin: process.env.OPENCODE_BIN || '/etc/profiles/per-user/ravi/bin/opencode',
 };
 
 export const paths = {

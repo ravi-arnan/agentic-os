@@ -3,10 +3,10 @@ import { NAV } from './Sidebar.jsx';
 
 const SUBTITLES = {
   overview: 'Live metrics, cost, and activity at a glance',
-  skills: 'One-click Claude Code skills — launch and watch them run',
+  skills: 'One-click opencode skills — launch and watch them run',
   runs: 'Every headless run, newest first',
   vault: 'Second brain snapshot from your Obsidian vault',
-  projects: 'Projects Claude Code is tracking',
+  projects: 'Projects agentic-os is tracking',
 };
 
 export default function Header({ view, overview }) {

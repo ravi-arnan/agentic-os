@@ -202,7 +202,7 @@ export const AGENTS = {
 
   opencode: {
     label: 'opencode',
-    bin: () => 'opencode',
+    bin: (config) => config.opencodeBin || process.env.OPENCODE_BIN || '/etc/profiles/per-user/ravi/bin/opencode',
     mode: 'text',
     args(skill, prompt) {
       const args = ['run', prompt];
@@ -221,7 +221,10 @@ export const AGENTS = {
 };
 
 export function getAgent(id) {
-  const agent = AGENTS[id || 'claude'];
+  // ponytail: default ke opencode karena Claude Code sudah tidak dapat diakses,
+  // override via AGENTIC_OS_AGENT=claude kalau mau balik ke Claude
+  const fallback = process.env.AGENTIC_OS_AGENT || 'opencode';
+  const agent = AGENTS[id || fallback];
   if (!agent) throw new Error(`unknown agent "${id}" (have: ${Object.keys(AGENTS).join(', ')})`);
   return agent;
 }

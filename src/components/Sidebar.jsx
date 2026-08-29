@@ -54,7 +54,7 @@ export default function Sidebar({ view, onNav, running = 0 }) {
       </nav>
 
       <div className="text-faint mt-auto px-2 font-mono text-[0.58rem] leading-relaxed tracking-wider">
-        wraps claude code headless
+        wraps opencode headless
         <br />
         vault · secondbrain
       </div>

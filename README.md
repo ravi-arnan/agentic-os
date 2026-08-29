@@ -1,22 +1,23 @@
 # Agentic OS
 
 A visual agentic OS for one person: a clickable local dashboard that wraps
-Claude Code, turns daily workflows into one-click skills, and shows metrics
-the terminal can't — wired into the `secondbrain` Obsidian vault.
+opencode (default, via 9router) and Claude Code, turns daily workflows into
+one-click skills, and shows metrics the terminal can't — wired into the
+`secondbrain` Obsidian vault.
 
 ## What it does
 
-- **Skill deck** — one-click headless Claude Code runs (`claude -p --output-format stream-json`),
-  streamed live into the dashboard:
+- **Skill deck** — one-click headless opencode runs (`opencode run --dangerously-skip-permissions`),
+  streamed live into the dashboard (Claude Code still supported via `agent: 'claude'`):
   - *Morning briefing* — sweeps `~/Projects` git state + memory, writes Prioritas /
     Konteks buat AI into today's `daily/` note in the vault.
   - *Project status sweep* — per-project status + next action, saved to `AI/status/`.
   - *Session journaler* — digests today's Claude Code activity into `AI/sessions/`
     plus the daily note's Agent log.
   - *Quick capture* — routes a thought to the right vault note (or `00-Inbox/`).
-- **Metrics** — parsed from `~/.claude` (session transcripts, history, live sessions):
-  - Estimated API-value spend per day, stacked by model (subscription transcripts
-    carry `costUSD: 0`, so cost is estimated from tokens x model pricing).
+- **Metrics** — parsed from `~/.claude` (Claude transcripts) + `~/.local/share/opencode/opencode-stable.db` (opencode sessions):
+  - Estimated API-value spend per day, stacked by model (subscription / free
+    transcripts carry `costUSD: 0`, so cost is estimated from tokens x model pricing; free 9router/opencode models show $0.00).
   - Hour x weekday focus heatmap, per-project cost and staleness, live session pips.
   - Vault health: daily-note streak, orphan notes, inbox count, edit activity.
   - Ops log of every skill run: duration, turns, est. cost, result summary.
@@ -52,10 +53,11 @@ Disable all scheduling with `AGENTIC_OS_NO_SCHEDULE=1`.
 
 ## Which CLI runs a skill
 
-A skill picks its backend with `agent: 'opencode'` (default `'claude'`). Every
-adapter lives in `server/lib/agents.mjs` — argv builder plus a parser that
-normalizes the CLI's output into the same `{t:'init'|'assistant'|'result'}`
-events the dashboard already renders.
+A skill picks its backend with `agent: 'opencode'` (default since 2026-08-30,
+previously `'claude'`). Every adapter lives in `server/lib/agents.mjs` — argv
+builder plus a parser that normalizes the CLI's output into the same
+`{t:'init'|'assistant'|'result'}` events the dashboard already renders.
+Override default via `AGENTIC_OS_AGENT=claude` env.
 
 | agent | CLI | output | verified |
 |---|---|---|---|
@@ -72,9 +74,9 @@ Caveats worth knowing before switching a skill over:
   leans on a tight tool allowlist is safest left on `claude`.
 - `opencode run` auto-rejects every permission prompt, so write skills need
   the `--dangerously-skip-permissions` the adapter adds for `acceptEdits`.
-- Cost metrics still come from `~/.claude` and stay Claude-only. Text agents
-  report no cost or turn count.
-- Per-agent model override: `models: { opencode: 'big-pickle' }` on the skill.
+- Cost metrics now merge `~/.claude` (Claude) + `opencode-stable.db` (opencode).
+  Free 9router/opencode models still report $0.00; use `server/lib/opencode-usage.mjs` to adjust pricing if needed.
+- Per-agent model override: `models: { opencode: '9router/gemini/gemini-3.5-flash-lite' }` on the skill (since 2026-08-30 skills use `9router/gemini/gemini-3.5-flash-lite` for quick tasks and `9router/free-default` for heavy ones).
 
 ## Always-on + phone access (deploy)
 
@@ -131,6 +133,8 @@ Defaults live in `server/config.mjs`, overridable via env:
 | `PROJECTS_ROOT` | `~/Projects` |
 | `VAULT_DIR` | `~/Projects/secondbrain` |
 | `CLAUDE_BIN` | `claude` |
+| `OPENCODE_BIN` | `/etc/profiles/per-user/ravi/bin/opencode` |
+| `AGENTIC_OS_AGENT` | `opencode` (since 2026-08-30) |
 
 Skills are plain objects in `server/skills/index.mjs` — prompt template,
 cwd, allowed tools, permission mode, model, timeout. Add a new one-click
@@ -146,14 +150,16 @@ facts.
 
 ```
 server/               express, plain ESM, no build step
-  config.mjs          paths + env overrides
-  lib/usage.mjs       transcript aggregation (mtime-keyed disk cache,
+  config.mjs          paths + env overrides (port, agent, opencode bin)
+  lib/usage.mjs       Claude transcript aggregation (mtime-keyed disk cache,
                       dedupe by message.id, cost estimation)
+  lib/opencode-usage.mjs  opencode sqlite aggregation (since 2026-08-30,
+                          merges with Claude usage for dashboard)
   lib/activity.mjs    history.jsonl heatmap, stats-cache, live sessions
   lib/vault.mjs       vault walk: streak, orphans (wikilink graph), inbox
   lib/projects.mjs    git sweep of ~/Projects + memory hooks
-  lib/runner.mjs      spawn claude -p, distill stream-json, SSE, run log
-  skills/index.mjs    the one-click skill registry
+  lib/runner.mjs      spawn agent (opencode/claude), distill output, SSE, run log
+  skills/index.mjs    the one-click skill registry (now default agent: opencode)
 src/                  react + tailwind v4, custom SVG charts, lucide icons
 data/                 usage cache + run history (gitignored)
 ```

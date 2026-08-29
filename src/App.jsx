@@ -128,7 +128,7 @@ export default function App() {
         </main>
 
         <footer className="text-faint pb-1 text-center font-mono text-[0.62rem] tracking-wider">
-          agentic-os · wraps claude code headless · costs are API-equivalent estimates
+          agentic-os · wraps opencode headless · costs are API-equivalent estimates (claude usage only)
         </footer>
       </div>
     </div>

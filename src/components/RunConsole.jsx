@@ -67,7 +67,7 @@ export default function RunConsole({ runId, skill, fallback, onClose, onFinished
 
       <div ref={scrollRef} className="max-h-72 space-y-2.5 overflow-y-auto px-4 py-3">
         {events.length === 0 && !evicted && (
-          <p className="text-faint font-mono text-xs">spawning claude -p ...</p>
+          <p className="text-faint font-mono text-xs">spawning {skill?.agent || 'opencode'} ...</p>
         )}
         {evicted && (
           <div
@@ -126,7 +126,7 @@ export default function RunConsole({ runId, skill, fallback, onClose, onFinished
           <span>turns <span className="num text-ink">{result.turns ?? '·'}</span></span>
           <span>took <span className="num text-ink">{fmtDuration(result.durationMs)}</span></span>
           {result.sessionId && (
-            <span className="truncate text-faint">resume: claude -r {result.sessionId}</span>
+            <span className="truncate text-faint">session: {result.sessionId}</span>
           )}
         </div>
       )}
