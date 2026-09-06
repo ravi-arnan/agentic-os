@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { AGENTS, getAgent, distillCopilotEvent } from '../lib/agents.mjs';
+import { AGENTS, getAgent, distillCopilotEvent, distillCmdEvent } from '../lib/agents.mjs';
 
 const skill = { id: 'quick-capture', permissionMode: 'acceptEdits', allowedTools: ['Read', 'Write'] };
 
@@ -34,6 +34,24 @@ describe('agent argv', () => {
   test('agy runs in accept-edits, not skip-permissions', () => {
     const args = AGENTS.agy.args(skill, 'halo');
     expect(args).toEqual(['--print', 'halo', '--mode', 'accept-edits']);
+  });
+
+  test('commandcode needs --yolo for write skills, plan for read-only', () => {
+    // acceptEdits (default) -> --yolo: in headless mode only --yolo opens
+    // writes (--auto-accept still denies, verified live 2026-08-30)
+    const args = AGENTS.commandcode.args(skill, 'halo');
+    expect(args).toEqual([
+      '-p', 'halo',
+      '--output-format', 'json',
+      '--skip-onboarding',
+      '--no-auto-update',
+      '--yolo',
+    ]);
+    // read-only/plan stays read-only
+    const planArgs = AGENTS.commandcode.args({ ...skill, permissionMode: 'plan' }, 'halo');
+    expect(planArgs).toContain('--permission-mode');
+    expect(planArgs).toContain('plan');
+    expect(planArgs).not.toContain('--yolo');
   });
 
   test('unknown agent fails loudly instead of silently running claude', () => {
@@ -84,6 +102,38 @@ describe('output parsing', () => {
       type: 'system', subtype: 'init', model: 'Auto', session_id: '9ad5293a', cwd: '/tmp',
     };
     expect(AGENTS.cursor.parse(init)).toEqual({ t: 'init', model: 'Auto', sessionId: '9ad5293a' });
+  });
+
+  test('commandcode frames distil to the shared event shape', () => {
+    // captured live 2026-08-30 from `cmd -p ... --output-format json`
+    expect(distillCmdEvent({ type: 'event', event: { type: 'run_start', sessionId: '58c4caf2' } }))
+      .toEqual({ t: 'init', model: null, sessionId: '58c4caf2' });
+    expect(distillCmdEvent({ type: 'event', event: { type: 'text_delta', delta: 'pong' } }))
+      .toEqual({ t: 'assistant', text: 'pong', tools: [], _delta: true });
+    const toolFrame = {
+      type: 'event',
+      event: {
+        type: 'message_update',
+        content: [
+          { type: 'text', text: 'reading' },
+          { type: 'tool_use', name: 'read_file', input: { file_path: '/tmp/package.json' } },
+        ],
+      },
+    };
+    expect(distillCmdEvent(toolFrame))
+      .toEqual({ t: 'assistant', text: null, tools: [{ name: 'read_file', target: '/tmp/package.json' }] });
+    const result = {
+      type: 'result', subtype: 'success', sessionId: '58c4caf2', stopReason: 'end_turn',
+      usage: { inputTokens: 14854, outputTokens: 41 }, durationMs: 3729, finalText: 'pong',
+    };
+    expect(distillCmdEvent(result)).toMatchObject({
+      t: 'result', ok: true, text: 'pong', turns: 14854, durationMs: 3729, sessionId: '58c4caf2',
+    });
+  });
+
+  test('commandcode failed runs surface subtype + error', () => {
+    const failed = { type: 'result', subtype: 'error', error: 'auth required' };
+    expect(distillCmdEvent(failed)).toMatchObject({ t: 'result', ok: false, error: 'auth required' });
   });
 });
 

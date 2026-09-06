@@ -6,6 +6,7 @@ import SkillDeck from './components/SkillDeck.jsx';
 import RunConsole from './components/RunConsole.jsx';
 import CostChart from './components/CostChart.jsx';
 import WeeklyUsage from './components/WeeklyUsage.jsx';
+import ProviderQuotas from './components/ProviderQuotas.jsx';
 import StatTiles from './components/StatTiles.jsx';
 import Heatmap from './components/Heatmap.jsx';
 import VaultCard from './components/VaultCard.jsx';
@@ -88,6 +89,9 @@ export default function App() {
                 <StatTiles overview={overview.data} usage={usage.data} />
               </div>
               <div className="col-span-12">
+                <ProviderQuotas usage={usage.data} />
+              </div>
+              <div className="col-span-12">
                 <WeeklyUsage usage={usage.data} />
               </div>
               <div className="col-span-12">
@@ -128,7 +132,7 @@ export default function App() {
         </main>
 
         <footer className="text-faint pb-1 text-center font-mono text-[0.62rem] tracking-wider">
-          agentic-os · wraps opencode headless · costs are API-equivalent estimates (claude usage only)
+          agentic-os · wraps opencode headless · unified tracking (claude · opencode · agy)
         </footer>
       </div>
     </div>

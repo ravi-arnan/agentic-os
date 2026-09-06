@@ -248,10 +248,153 @@ async function doScan() {
 // Summaries for the dashboard
 // ---------------------------------------------------------------------------
 
+export function detectProvider(slug, model) {
+  if (typeof slug === 'string' && slug.startsWith('codebuff:')) return 'codebuff';
+  if (typeof slug === 'string' && slug.startsWith('agy:')) return 'agy';
+  if (typeof slug === 'string' && slug.startsWith('opencode:')) return 'opencode';
+  if (typeof slug === 'string' && slug.startsWith('commandcode:')) return 'commandcode';
+  if (typeof slug === 'string' && slug.startsWith('cursor:')) return 'cursor';
+  if (typeof slug === 'string' && slug.startsWith('copilot:')) return 'copilot';
+  const m = String(model || '').toLowerCase();
+  if (m.startsWith('opencode/')) return 'opencode';
+  if (m.startsWith('9router/')) return '9router';
+  if (m.includes('gemini')) return 'agy';
+  if (m.includes('nvidia') || m.includes('nemotron') || m.includes('qwen') || m.includes('deepseek') || m.includes('big-pickle') || m.includes('north-mini') || m.includes('devstral') || m.includes('minimax') || m.includes('mistral')) return 'opencode';
+  if (m.startsWith('claude-') || m.includes('fable') || m.includes('opus') || m.includes('sonnet') || m.includes('haiku')) return 'claude';
+  return 'claude';
+}
+
+export const PROVIDER_INFO = {
+  claude: {
+    id: 'claude',
+    name: 'Anthropic Claude Code',
+    badge: 'API / Plan',
+    tier: 'Subscription / API Tokens',
+    quotaInfo: 'Weekly plan rollover',
+    color: 'var(--color-cyan)',
+    isPaid: true,
+  },
+  agy: {
+    id: 'agy',
+    name: 'Google Antigravity (AGY)',
+    badge: 'Google Code Assist',
+    tier: 'Free / Preview Tier & Multi-Model',
+    quotaInfo: 'Gemini 3.7 Flash & Claude Bridge',
+    color: '#38bdf8',
+    isPaid: false,
+  },
+  opencode: {
+    id: 'opencode',
+    name: 'OpenCode',
+    badge: 'Free Tier',
+    tier: '100% Free / Contributor Models',
+    quotaInfo: 'Free Unlimited (Muse, DeepSeek, Pickle, etc.)',
+    color: '#a78bfa',
+    isPaid: false,
+  },
+  '9router': {
+    id: '9router',
+    name: '9router Local Router',
+    badge: 'Local :20128',
+    tier: 'Multi-provider local proxy',
+    quotaInfo: 'Local failover routing',
+    color: '#34d399',
+    isPaid: false,
+  },
+  codebuff: {
+    id: 'codebuff',
+    name: 'Buffy (Codebuff)',
+    badge: 'Freebuff.com',
+    tier: 'Free AI Coding Agent',
+    quotaInfo: 'Free via freebuff.com',
+    color: '#f472b6',
+    isPaid: false,
+  },
+  commandcode: {
+    id: 'commandcode',
+    name: 'Command Code',
+    badge: 'Command Code',
+    tier: 'Free / Paid API',
+    quotaInfo: 'Token usage per run (no per-request cost tracked)',
+    color: '#fbbf24',
+    isPaid: false,
+  },
+  cursor: {
+    id: 'cursor',
+    name: 'Cursor',
+    badge: 'Cursor Agent',
+    tier: 'Free / Pro',
+    quotaInfo: 'Cursor Agent CLI (account quota)',
+    color: '#94a3b8',
+    isPaid: false,
+  },
+  copilot: {
+    id: 'copilot',
+    name: 'GitHub Copilot',
+    badge: 'Copilot CLI',
+    tier: 'Free / Pro',
+    quotaInfo: 'Premium requests quota',
+    color: '#c084fc',
+    isPaid: false,
+  },
+};
+
+/**
+ * Force the known providers to always show in the dashboard, even when they
+ * have no usage yet (e.g. an agent whose account is out of quota). Pure over
+ * (usage, now) for testability: today's rows are zero-filled with the current
+ * date so the card renders instead of disappearing.
+ */
+export function seedProviders(usage, now = Date.now()) {
+  const seen = new Set(usage.providers.map((p) => p.id));
+  const today = dayKey(now);
+  const zeroRow = { in: 0, out: 0, cacheRead: 0, cacheCreate: 0, messages: 0, toolCalls: 0 };
+  const seeded = [...usage.providers];
+  const added = [];
+  for (const meta of Object.values(PROVIDER_INFO)) {
+    if (seen.has(meta.id)) continue;
+    const prov = {
+      ...meta,
+      ...zeroRow,
+      cost: 0,
+      sessions: 0,
+      models: [],
+    };
+    seeded.push(prov);
+    added.push(meta.id);
+  }
+  if (added.length > 0) {
+    // make sure today's daily rollup exists so the chart/overview include the
+    // seeded providers instead of dropping them
+    let roll = usage.daily.find((d) => d.date === today);
+    if (!roll) {
+      roll = {
+        date: today,
+        cost: 0,
+        in: 0,
+        out: 0,
+        cacheRead: 0,
+        cacheCreate: 0,
+        messages: 0,
+        toolCalls: 0,
+        sessions: 0,
+        byModel: {},
+      };
+      usage.daily.push(roll);
+    }
+    for (const id of added) {
+      roll.byModel[id] = { in: 0, out: 0, cost: 0 };
+    }
+    usage.daily.sort((a, b) => a.date.localeCompare(b.date));
+  }
+  return { ...usage, providers: seeded };
+}
+
 export function summarizeUsage(fileAggs, { days = 45 } = {}) {
   const daily = new Map(); // day -> rollup
   const perProject = new Map();
   const models = new Map();
+  const providersMap = new Map();
   const totals = { cost: 0, in: 0, out: 0, cacheRead: 0, cacheCreate: 0, messages: 0, toolCalls: 0, sessions: fileAggs.length };
 
   const cutoff = new Date();
@@ -286,6 +429,34 @@ export function summarizeUsage(fileAggs, { days = 45 } = {}) {
         mm.out += m.out;
         mm.cost += m.cost;
         models.set(model, mm);
+
+        // Group by provider
+        const provId = detectProvider(f.slug, model);
+        const meta = PROVIDER_INFO[provId] || { id: provId, name: provId, badge: provId, tier: 'Custom', quotaInfo: '', color: 'var(--color-faint)' };
+        const prov = providersMap.get(provId) || {
+          ...meta,
+          in: 0,
+          out: 0,
+          cacheRead: 0,
+          cacheCreate: 0,
+          cost: 0,
+          messages: 0,
+          toolCalls: 0,
+          sessions: new Set(),
+          models: new Map(),
+        };
+        prov.in += m.in;
+        prov.out += m.out;
+        prov.cost += m.cost;
+        prov.messages += d.messages;
+        prov.toolCalls += d.toolCalls;
+        prov.sessions.add(f.slug);
+        const pModel = prov.models.get(model) || { model, in: 0, out: 0, cost: 0 };
+        pModel.in += m.in;
+        pModel.out += m.out;
+        pModel.cost += m.cost;
+        prov.models.set(model, pModel);
+        providersMap.set(provId, prov);
       }
       if (day < cutoffKey) continue;
       const roll = daily.get(day) || {
@@ -310,10 +481,17 @@ export function summarizeUsage(fileAggs, { days = 45 } = {}) {
     }
   }
 
+  const providers = [...providersMap.values()].map((p) => ({
+    ...p,
+    sessions: p.sessions.size,
+    models: [...p.models.values()].sort((a, b) => b.cost - a.cost || b.out - a.out),
+  })).sort((a, b) => b.cost - a.cost || (b.in + b.out) - (a.in + a.out));
+
   return {
     totals,
     daily: [...daily.values()].sort((a, b) => a.date.localeCompare(b.date)),
     perProject: [...perProject.values()].sort((a, b) => b.cost - a.cost),
     models: [...models.values()].sort((a, b) => b.cost - a.cost || b.out - a.out),
+    providers,
   };
 }

@@ -102,6 +102,76 @@ export function distillCopilotEvent(evt) {
   return null;
 }
 
+/**
+ * Command Code `cmd -p --output-format json` (NDJSON). Frames come in two
+ * envelopes: `{"type":"event","event":{...}}` for the run lifecycle and a
+ * final `{"type":"result","subtype":...,...}` line. Verified live 2026-08-30:
+ * run_start / text_delta / message_update (tool_use) / run_end / result.
+ */
+export function distillCmdEvent(frame) {
+  if (!frame || typeof frame !== 'object') return null;
+
+  // -- the closing result line --
+  if (frame.type === 'result') {
+    const failed = frame.subtype !== 'success';
+    const usage = frame.usage || {};
+    return {
+      t: 'result',
+      ok: !failed,
+      text: typeof frame.finalText === 'string' ? frame.finalText : null,
+      costUSD: null, // billed in requests, not dollars
+      turns: usage.inputTokens ?? null,
+      durationMs: frame.durationMs ?? null,
+      sessionId: frame.sessionId ?? null,
+      error: failed ? (frame.error || frame.subtype) : null,
+    };
+  }
+
+  const evt = frame.event;
+  if (!evt || typeof evt !== 'object') return null;
+
+  switch (evt.type) {
+    case 'run_start':
+      return { t: 'init', model: null, sessionId: evt.sessionId || null };
+    case 'text_delta': {
+      const delta = typeof evt.delta === 'string' ? evt.delta : '';
+      if (!delta) return null;
+      return { t: 'assistant', text: delta, tools: [], _delta: true };
+    }
+    case 'message_update': {
+      const content = evt.content;
+      if (!Array.isArray(content)) return null;
+      // one message_update can carry text plus a tool_use block; the text
+      // dups the streamed deltas, so only surface tool calls from here
+      const tools = content
+        .filter((c) => c?.type === 'tool_use')
+        .map((c) => ({
+          name: c.name || 'tool',
+          target:
+            c.input?.file_path || c.input?.path || c.input?.pattern ||
+            c.input?.command?.slice(0, 80) || null,
+        }));
+      if (tools.length === 0) return null;
+      return { t: 'assistant', text: null, tools };
+    }
+    case 'run_end': {
+      const result = evt.result;
+      return {
+        t: 'result',
+        ok: true,
+        text: typeof result?.finalText === 'string' ? result.finalText : null,
+        costUSD: null,
+        turns: result?.turnCount ?? null,
+        durationMs: null,
+        sessionId: evt.nextState?.sessionId ?? null,
+        error: null,
+      };
+    }
+    default:
+      return null;
+  }
+}
+
 /** Agents that only print prose: keep the lines, build the result at exit. */
 function plainTextLine(line, skipBanner) {
   const clean = line.replace(ANSI, '').trimEnd();
@@ -217,6 +287,25 @@ export const AGENTS = {
     // strips the "> build · big-pickle" header opencode prints before the answer
     parse: (line) => plainTextLine(line, /^>\s+\S+\s+·\s+/),
     result: textResult,
+  },
+
+  commandcode: {
+    label: 'Command Code',
+    bin: (config) => config.commandCodeBin || 'cmd',
+    mode: 'ndjson',
+    args(skill, prompt) {
+      const args = ['-p', prompt, '--output-format', 'json', '--skip-onboarding', '--no-auto-update'];
+      // Command Code has an --auto-accept mode, but in print/headless mode it
+      // still fails closed on writes (verified 2026-08-30: edits were denied
+      // without --yolo), so a write skill needs --yolo — the only flag that
+      // actually opens writes headlessly. Read-only skills stay in plan mode.
+      if (autoApprove(skill)) args.push('--yolo');
+      else args.push('--permission-mode', 'plan');
+      const model = skill.models?.commandcode || skill.model;
+      if (model) args.push('--model', model);
+      return args;
+    },
+    parse: distillCmdEvent,
   },
 };
 

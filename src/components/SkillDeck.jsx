@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Sunrise, Radar, NotebookPen, Inbox, CalendarCheck, Play, LoaderCircle, CircleCheck, CircleX, CircleDashed, Send, AlarmClock } from 'lucide-react';
+import { Sunrise, Radar, NotebookPen, Inbox, CalendarCheck, RefreshCw, Play, LoaderCircle, CircleCheck, CircleX, CircleDashed, Send, AlarmClock } from 'lucide-react';
 import { apiPost } from '../api.js';
 import { fmtAgo, fmtMoney, fmtDuration } from '../lib/format.js';
 
-const ICONS = { Sunrise, Radar, NotebookPen, Inbox, CalendarCheck };
+const ICONS = { Sunrise, Radar, NotebookPen, Inbox, CalendarCheck, RefreshCw };
 const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
 function ScheduleChip({ schedule }) {

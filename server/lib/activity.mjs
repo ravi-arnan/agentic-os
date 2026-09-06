@@ -17,27 +17,31 @@ export async function getActivity({ weeks = 8 } = {}) {
   const commands = new Map();
   let total = 0;
 
-  try {
-    await eachJsonlRecord(paths.historyFile, (rec) => {
-      const ts = rec.timestamp;
-      if (typeof ts !== 'number' || ts < since) return;
-      total += 1;
-      const d = new Date(ts);
-      const weekday = (d.getDay() + 6) % 7; // Mon-first
-      heatmap[weekday][d.getHours()] += 1;
-      const day = dayKey(ts);
-      perDay.set(day, (perDay.get(day) || 0) + 1);
-      if (rec.project) {
-        perProject.set(rec.project, (perProject.get(rec.project) || 0) + 1);
-      }
-      const display = String(rec.display || '');
-      if (display.startsWith('/')) {
-        const cmd = display.split(/\s+/)[0];
-        commands.set(cmd, (commands.get(cmd) || 0) + 1);
-      }
-    });
-  } catch {
-    // no history file — return empty shape
+  const historyFiles = [paths.historyFile, paths.agyHistory].filter(Boolean);
+  for (const hFile of historyFiles) {
+    try {
+      await eachJsonlRecord(hFile, (rec) => {
+        const ts = rec.timestamp;
+        if (typeof ts !== 'number' || ts < since) return;
+        total += 1;
+        const d = new Date(ts);
+        const weekday = (d.getDay() + 6) % 7; // Mon-first
+        heatmap[weekday][d.getHours()] += 1;
+        const day = dayKey(ts);
+        perDay.set(day, (perDay.get(day) || 0) + 1);
+        const proj = rec.project || rec.workspace;
+        if (proj) {
+          perProject.set(proj, (perProject.get(proj) || 0) + 1);
+        }
+        const display = String(rec.display || '');
+        if (display.startsWith('/')) {
+          const cmd = display.split(/\s+/)[0];
+          commands.set(cmd, (commands.get(cmd) || 0) + 1);
+        }
+      });
+    } catch {
+      // history file unreadable — skip
+    }
   }
 
   return {

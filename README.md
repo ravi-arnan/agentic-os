@@ -40,6 +40,11 @@ minute, restart-safe: a skill that already ran today won't re-fire):
 - session-journaler at 21:30 daily
 - status-sweep Fridays at 17:00
 - weekly-review Sundays at 20:00
+- sysupdate-check at 10:00 daily (cek ketertinggalan flake NixOS + npm global; read-only, lapor tanpa update)
+
+Heavy skills (status-sweep, weekly-review) diberi timeout 30 menit dan journaler
+12 menit (7 Sep 2026) karena run yang > timeout sebelumnya di-kill dan tercatat
+`exited null` padahal output-nya sudah tertulis.
 
 A slot missed because the server was down or the laptop was asleep is caught up
 on the next tick, but only within 6 hours of the slot. Older misses are dropped
@@ -64,18 +69,27 @@ Override default via `AGENTIC_OS_AGENT=claude` env.
 | `claude` | Claude Code | `--output-format stream-json` | yes |
 | `agy` | Antigravity | plain text (`--print`) | yes |
 | `opencode` | opencode | plain text (`run`) | yes |
+| `commandcode` | Command Code | `--output-format json` (NDJSON) | yes |
 | `cursor` | cursor-agent | stream-json (same envelope as Claude) | startup only, account out of quota |
 | `copilot` | GitHub Copilot CLI | `--output-format json` (NDJSON) | startup + error only, monthly quota exceeded |
 
 Caveats worth knowing before switching a skill over:
 
 - `allowedTools` is Claude syntax. Other CLIs get their own coarse equivalent
-  (`--force`, `--allow-all-tools`, `--mode accept-edits`), so a skill that
+  (`--force`, `--allow-all-tools`, `--mode accept-edits`, `--yolo`), so a skill that
   leans on a tight tool allowlist is safest left on `claude`.
 - `opencode run` auto-rejects every permission prompt, so write skills need
   the `--dangerously-skip-permissions` the adapter adds for `acceptEdits`.
 - Cost metrics now merge `~/.claude` (Claude) + `opencode-stable.db` (opencode).
   Free 9router/opencode models still report $0.00; use `server/lib/opencode-usage.mjs` to adjust pricing if needed.
+- Command Code runs report `costUSD: null` (billed in requests, not dollars);
+  the ops log shows turns (from its `usage.inputTokens`) instead of spend.
+  Its token usage is parsed from the run NDJSON agentic-os persists
+  (`data/runs/*.ndjson`) and shows up in the providers panel as `commandcode`.
+- Cursor and Copilot do not expose token usage in their output, so the dashboard
+  tracks them via manually logged sessions (`logExtraAgentSession` →
+  `data/extra-agent-sessions.jsonl`). Their cards are always visible in the
+  providers panel (zero-filled until a session is logged).
 - Per-agent model override: `models: { opencode: '9router/gemini/gemini-3.5-flash-lite' }` on the skill (since 2026-08-30 skills use `9router/gemini/gemini-3.5-flash-lite` for quick tasks and `9router/free-default` for heavy ones).
 
 ## Always-on + phone access (deploy)
@@ -134,6 +148,7 @@ Defaults live in `server/config.mjs`, overridable via env:
 | `VAULT_DIR` | `~/Projects/secondbrain` |
 | `CLAUDE_BIN` | `claude` |
 | `OPENCODE_BIN` | `/etc/profiles/per-user/ravi/bin/opencode` |
+| `COMMAND_CODE_BIN` | `cmd` |
 | `AGENTIC_OS_AGENT` | `opencode` (since 2026-08-30) |
 
 Skills are plain objects in `server/skills/index.mjs` — prompt template,

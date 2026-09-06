@@ -47,6 +47,10 @@ export function modelColor(model) {
   if (m.includes('opus')) return 'var(--color-violet)';
   if (m.includes('sonnet')) return 'var(--color-cyan)';
   if (m.includes('haiku')) return 'var(--color-warn)';
+  if (m.includes('gemini')) return '#38bdf8';
+  if (m.includes('qwen')) return '#a78bfa';
+  if (m.includes('nemotron')) return '#34d399';
+  if (m.includes('deepseek')) return '#60a5fa';
   return 'var(--color-faint)';
 }
 
@@ -68,7 +72,7 @@ export function daysUntilWeekReset(now = Date.now()) {
 
 export function shortModel(model) {
   const m = String(model || '');
-  const match = m.match(/(fable|opus|sonnet|haiku)[-\s]?([\d.-]*)/i);
+  const match = m.match(/(fable|opus|sonnet|haiku|gemini|nemotron|qwen|deepseek)[-\s]?([\d.-]*)/i);
   if (!match) return m;
   return `${match[1]}${match[2] ? ' ' + match[2].replace(/-/g, '.') : ''}`.trim();
 }

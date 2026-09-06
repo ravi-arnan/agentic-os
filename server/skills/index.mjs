@@ -1,10 +1,15 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fsp from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { config, paths } from '../config.mjs';
 import { eachJsonlRecord, dayKey } from '../lib/jsonl.mjs';
-import { scanUsage, summarizeUsage } from '../lib/usage.mjs';
+import { scanUsage, summarizeUsage, seedProviders } from '../lib/usage.mjs';
+import { scanOpencodeUsage } from '../lib/opencode-usage.mjs';
+import { scanAgyUsage } from '../lib/agy-usage.mjs';
+import { scanCommandcodeUsage } from '../lib/commandcode-usage.mjs';
+import { scanExtraAgentUsage } from '../lib/extra-agent-usage.mjs';
 import { sweepProjects } from '../lib/projects.mjs';
 import { listRuns } from '../lib/runner.mjs';
 import { wasDueOnDay } from '../lib/scheduler.mjs';
@@ -106,7 +111,14 @@ async function todayDigest() {
 
   let costLine = '';
   try {
-    const usage = summarizeUsage(await scanUsage(), { days: 2 });
+    const [claudeAggs, opencodeAggs, agyAggs, commandcodeAggs, extraAggs] = await Promise.all([
+      scanUsage(),
+      scanOpencodeUsage().catch(() => []),
+      scanAgyUsage().catch(() => []),
+      scanCommandcodeUsage().catch(() => []),
+      scanExtraAgentUsage().catch(() => []),
+    ]);
+    const usage = seedProviders(summarizeUsage([...claudeAggs, ...opencodeAggs, ...agyAggs, ...commandcodeAggs, ...extraAggs], { days: 2 }));
     const todayRow = usage.daily.find((d) => d.date === today);
     if (todayRow) {
       costLine = `Spend today: $${todayRow.cost.toFixed(2)}, ${todayRow.messages} messages, ${todayRow.toolCalls} tool calls, models: ${Object.keys(todayRow.byModel).join(', ')}`;
@@ -167,6 +179,74 @@ async function weekInventory(now = Date.now()) {
   return { label: isoWeekLabel(new Date(now)), days, dailies, sessions, inbox };
 }
 
+const NIX_INPUTS = [
+  ['nixpkgs', 'github:NixOS/nixpkgs/nixos-unstable'],
+  ['home-manager', 'github:nix-community/home-manager'],
+  ['nix-index-database', 'github:nix-community/nix-index-database'],
+];
+const NPM_PACKAGES = ['@earendil-works/pi-coding-agent', '9router', 'command-code', 'freebuff'];
+const DAY_MS = 24 * 3600 * 1000;
+const FLAKE_LOCK = '/etc/nixos/flake.lock';
+
+const stripAnsi = (s) => String(s || '').replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').trim();
+
+async function sh(cmd, args, timeoutMs = 45000) {
+  const { stdout } = await run(cmd, args, { timeout: timeoutMs });
+  return stdout;
+}
+
+/** Pinned vs upstream drift for the three flake inputs that pin the system. */
+async function flakeDrift() {
+  const lock = JSON.parse(await fsp.readFile(FLAKE_LOCK, 'utf8'));
+  const lines = [];
+  for (const [key, url] of NIX_INPUTS) {
+    const local = lock.nodes?.[key]?.locked || {};
+    const localMod = local.lastModified ? local.lastModified * 1000 : null;
+    let line;
+    try {
+      const meta = stripAnsi(await sh('nix', ['flake', 'metadata', url]));
+      const upRev = (meta.match(/Revision:\s*([0-9a-f]{40})/) || [])[1] || null;
+      const upRaw = (meta.match(/Last modified:\s*([0-9:\- ]+)/) || [])[1] || null;
+      const upMod = upRaw ? new Date(upRaw).getTime() : null;
+      if (upRev && upRev === local.rev) line = `- ${key}: up to date (${fmtDate(localMod)})`;
+      else {
+        const lag = Math.round(((upMod || Date.now()) - (localMod || Date.now())) / DAY_MS);
+        line = `- ${key}: pin ${String(local.rev || '?').slice(0, 7)} (${fmtDate(localMod)}) -> upstream ${String(upRev || '?').slice(0, 7)} (${fmtDate(upMod)}), tertinggal ~${lag} hari`;
+      }
+    } catch (err) {
+      line = `- ${key}: gagal cek upstream (${String(err.message || err).split('\n')[0].slice(0, 90)})`;
+    }
+    lines.push(line);
+  }
+  return lines.join('\n');
+}
+
+/** Local vs registry for the npm-global tools, read straight from package.json. */
+async function npmDrift() {
+  const root = path.join(os.homedir(), '.local', 'lib', 'node_modules');
+  const rows = [];
+  for (const pkg of NPM_PACKAGES) {
+    const dir = path.join(root, ...pkg.split('/'));
+    let localVer = null;
+    try {
+      localVer = JSON.parse(await fsp.readFile(path.join(dir, 'package.json'), 'utf8')).version;
+    } catch {
+      // not installed globally — skip silently
+    }
+    if (!localVer) continue;
+    let regVer = null;
+    try {
+      regVer = stripAnsi(await sh('npm', ['view', pkg, 'version'], 30000));
+    } catch {
+      // registry unreachable
+    }
+    if (!regVer) rows.push(`- ${pkg}: ${localVer} (gagal cek registry)`);
+    else if (regVer === localVer) rows.push(`- ${pkg}: ${localVer} (up to date)`);
+    else rows.push(`- ${pkg}: ${localVer} -> ${regVer} (PERLU UPDATE)`);
+  }
+  return rows.join('\n') || '- (tidak ada package npm global terpantau)';
+}
+
 export const skills = [
   {
     id: 'morning-briefing',
@@ -220,7 +300,7 @@ export const skills = [
     schedule: { hour: 17, minute: 0, weekday: 5 }, // Fridays
     permissionMode: 'acceptEdits',
     allowedTools: [...VAULT_TOOLS, ...GIT_READ_TOOLS, `Read(${config.projectsRoot}/**)`],
-    timeoutMs: 15 * 60 * 1000,
+    timeoutMs: 30 * 60 * 1000,
     async buildPrompt() {
       const digest = await projectsDigest(20);
       const today = dayKey(Date.now());
@@ -254,7 +334,7 @@ export const skills = [
     permissionMode: 'acceptEdits',
     allowedTools: VAULT_TOOLS,
     model: 'haiku',
-    timeoutMs: 8 * 60 * 1000,
+    timeoutMs: 12 * 60 * 1000,
     // end-of-day roll-up: commit whatever the day's skills wrote to the vault
     afterRun: commitVault,
     async buildPrompt() {
@@ -319,7 +399,7 @@ export const skills = [
     schedule: { hour: 20, minute: 0, weekday: 0 }, // Minggu 20:00
     permissionMode: 'acceptEdits',
     allowedTools: VAULT_TOOLS,
-    timeoutMs: 15 * 60 * 1000,
+    timeoutMs: 30 * 60 * 1000,
     afterRun: commitVault,
     async buildPrompt() {
       const inv = await weekInventory();
@@ -340,6 +420,41 @@ export const skills = [
         '4. Kalau ada project yang minggu ini nggak disentuh sama sekali padahal statusnya active, sebut di weekly review sebagai kandidat untuk di-pause atau diarsipkan.',
         '',
         'Balas dengan ringkasan weekly review (maks 12 baris): highlight minggu ini, berapa item inbox diproses, dan open loops yang dibawa ke depan.',
+      ].join('\n');
+    },
+  },
+  {
+    id: 'sysupdate-check',
+    name: 'Update check',
+    tagline: 'Cek ketertinggalan flake NixOS + npm global, lapor kalau perlu update',
+    icon: 'RefreshCw',
+    cwd: VAULT,
+    needsInput: false,
+    agent: 'opencode',
+    models: { opencode: '9router/gemini/gemini-3.5-flash-lite' },
+    schedule: { hour: 10, minute: 0 },
+    permissionMode: 'plan',
+    allowedTools: VAULT_TOOLS,
+    timeoutMs: 5 * 60 * 1000,
+    async buildPrompt() {
+      const flake = await flakeDrift().catch((e) => `- gagal baca flake (${String(e.message || e).slice(0, 90)})`);
+      const npm = await npmDrift().catch((e) => `- gagal cek npm (${String(e.message || e).slice(0, 90)})`);
+      return [
+        'Kamu lagi jalan sebagai skill "Update check" dari dashboard Agentic OS.',
+        'Ikuti protokol vault di CLAUDE.md (bahasa Indonesia, tanpa emoji, tanpa em-dash).',
+        '',
+        'Snapshot kondisi update sistem (sudah dihitung otomatis, JANGAN jalankan ulang nix/npm):',
+        '',
+        'Flake NixOS (/etc/nixos, pin vs nixos-unstable upstream):',
+        flake,
+        '',
+        'npm global (~/.local/lib/node_modules, local vs registry):',
+        npm,
+        '',
+        'Tugas:',
+        '1. Ringkas mana yang perlu update dan mana yang aman. Jangan menyuruh update kalau semuanya up to date.',
+        '2. Kalau nixpkgs tertinggal >= 7 hari atau ada npm yang PERLU UPDATE, tulis perintahnya satu-dua baris: NixOS `cd /etc/nixos && sudo nix flake update && sudo nixos-rebuild switch --flake .#nixbox` (ingatkan jalankan saat senggang, rebuild berat di laptop ini), npm `npm install -g <pkg>@latest`.',
+        '3. JANGAN menulis ke vault atau file apa pun. Cukup balas 5-8 baris ringkas yang tampil di dashboard.',
       ].join('\n');
     },
   },

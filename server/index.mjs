@@ -2,8 +2,12 @@ import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.mjs';
-import { scanUsage, summarizeUsage } from './lib/usage.mjs';
+import { scanUsage, summarizeUsage, seedProviders } from './lib/usage.mjs';
 import { scanOpencodeUsage } from './lib/opencode-usage.mjs';
+import { scanAgyUsage } from './lib/agy-usage.mjs';
+import { scanCommandcodeUsage } from './lib/commandcode-usage.mjs';
+import { scanExtraAgentUsage } from './lib/extra-agent-usage.mjs';
+import { scanCodebuffUsage, logCodebuffSession } from './lib/codebuff-usage.mjs';
 import { getActivity, getStatsCache, getLiveSessions } from './lib/activity.mjs';
 import { getVaultHealth } from './lib/vault.mjs';
 import { sweepProjects } from './lib/projects.mjs';
@@ -28,24 +32,32 @@ const asyncRoute = (fn) => (req, res) =>
 // --------------------------------------------------------------------------
 
 app.get('/api/overview', asyncRoute(async (req, res) => {
-  const [liveSessions, stats, claudeAggs, opencodeAggs] = await Promise.all([
+  const [liveSessions, stats, claudeAggs, opencodeAggs, agyAggs, codebuffAggs, commandcodeAggs, extraAggs] = await Promise.all([
     getLiveSessions(),
     getStatsCache(),
     scanUsage(),
     scanOpencodeUsage().catch(() => []),
+    scanAgyUsage().catch(() => []),
+    scanCodebuffUsage().catch(() => []),
+    scanCommandcodeUsage().catch(() => []),
+    scanExtraAgentUsage().catch(() => []),
   ]);
-  const usage = summarizeUsage([...claudeAggs, ...opencodeAggs], { days: 2 });
+  const usage = seedProviders(summarizeUsage([...claudeAggs, ...opencodeAggs, ...agyAggs, ...codebuffAggs, ...commandcodeAggs, ...extraAggs], { days: 2 }));
   const today = usage.daily.find((d) => d.date === dayKey(Date.now())) || null;
   res.json({ liveSessions, stats, today, totals: usage.totals });
 }));
 
 app.get('/api/usage', asyncRoute(async (req, res) => {
   const days = Math.min(365, Number(req.query.days) || 45);
-  const [claudeAggs, opencodeAggs] = await Promise.all([
+  const [claudeAggs, opencodeAggs, agyAggs, codebuffAggs, commandcodeAggs, extraAggs] = await Promise.all([
     scanUsage(),
     scanOpencodeUsage().catch(() => []),
+    scanAgyUsage().catch(() => []),
+    scanCodebuffUsage().catch(() => []),
+    scanCommandcodeUsage().catch(() => []),
+    scanExtraAgentUsage().catch(() => []),
   ]);
-  res.json(summarizeUsage([...claudeAggs, ...opencodeAggs], { days }));
+  res.json(seedProviders(summarizeUsage([...claudeAggs, ...opencodeAggs, ...agyAggs, ...codebuffAggs, ...commandcodeAggs, ...extraAggs], { days })));
 }));
 
 app.get('/api/activity', asyncRoute(async (req, res) => {
@@ -57,12 +69,16 @@ app.get('/api/vault', asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/projects', asyncRoute(async (req, res) => {
-  const [claudeAggs, opencodeAggs] = await Promise.all([
+  const [claudeAggs, opencodeAggs, agyAggs, codebuffAggs, commandcodeAggs, extraAggs] = await Promise.all([
     scanUsage(),
     scanOpencodeUsage().catch(() => []),
+    scanAgyUsage().catch(() => []),
+    scanCodebuffUsage().catch(() => []),
+    scanCommandcodeUsage().catch(() => []),
+    scanExtraAgentUsage().catch(() => []),
   ]);
   const byProject = new Map();
-  for (const p of summarizeUsage([...claudeAggs, ...opencodeAggs], { days: 3650 }).perProject) {
+  for (const p of summarizeUsage([...claudeAggs, ...opencodeAggs, ...agyAggs, ...codebuffAggs, ...commandcodeAggs, ...extraAggs], { days: 3650 }).perProject) {
     byProject.set(p.project, { lastActive: p.lastActive, cost: p.cost, sessions: p.sessions });
   }
   res.json(await sweepProjects(byProject));
@@ -133,6 +149,37 @@ app.get('/api/runs/:id/stream', (req, res) => {
   run.emitter.on('end', onEnd);
   req.on('close', cleanup);
 });
+
+// --------------------------------------------------------------------------
+// Codebuff / Freebuff session logging
+// --------------------------------------------------------------------------
+
+app.post('/api/codebuff/sessions', asyncRoute(async (req, res) => {
+  const body = req.body || {};
+  if (!body.sessionId && !body.title) {
+    return res.status(400).json({ error: 'sessionId or title required' });
+  }
+  const entry = await logCodebuffSession({
+    sessionId: body.sessionId,
+    title: body.title,
+    project: body.project,
+    model: body.model,
+    messages: body.messages,
+    toolCalls: body.toolCalls,
+    inputTokens: body.inputTokens,
+    outputTokens: body.outputTokens,
+    costUSD: body.costUSD,
+    startedAt: body.startedAt,
+    endedAt: body.endedAt,
+    provider: body.provider || 'freebuff',
+  });
+  res.json({ ok: true, entry });
+}));
+
+app.get('/api/codebuff/sessions', asyncRoute(async (req, res) => {
+  const aggs = await scanCodebuffUsage();
+  res.json({ sessions: aggs });
+}));
 
 // --------------------------------------------------------------------------
 // Static frontend (production build)
